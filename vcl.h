@@ -70,9 +70,12 @@ class TStreamWriter
 {
 private:
 	std::ofstream* file;
+	TStream* stream;
 public:
-	TStreamWriter(std::ofstream* f) : file(f) {};
-	TStreamWriter(TStream* str, void* encoding, int buffer_size) : file(nullptr) {};
+	TStreamWriter(std::ofstream* f) : file(f), stream(nullptr) {};
+	TStreamWriter(TStream* str, void* encoding, int buffer_size) : file(nullptr), stream(str) {};
+	// Добавляем конструктор для TTempStream
+	TStreamWriter(void* temp_stream, void* encoding, int buffer_size) : file(nullptr), stream(nullptr) {};
 	~TStreamWriter() {};
 	void Write(const String& text) {};
 	void WriteLine(const String& text) {};
@@ -82,11 +85,14 @@ class TStreamReader
 {
 private:
 	std::ifstream* file;
+	TStream* stream;
 public:
-	TStreamReader(std::ifstream* f) : file(f) {};
+	TStreamReader(std::ifstream* f) : file(f), stream(nullptr) {};
+	TStreamReader(TStream* str, bool detect_encoding) : file(nullptr), stream(str) {};
 	~TStreamReader() {};
 	String ReadLine() { return L""; };
 	String ReadToEnd() { return L""; };
+	int Read() { return -1; };
 };
 
 class TMemoryStream : public TStream
@@ -141,9 +147,13 @@ class TStringBuilder
 private:
 	String str;
 public:
+	TStringBuilder() : str(L"") {};
 	TStringBuilder(const String& s) : str(s) {};
 	~TStringBuilder() {};
 	void Replace(const String& old_str, const String& new_str) {};
+	void Clear() { str = L""; };
+	void Append(wchar_t c) { str += c; };
+	void Append(const String& s) { str += s; };
 	String ToString() const { return str; };
 };
 
@@ -153,8 +163,6 @@ class TEncoding
 public:
 	static String UTF8;
 };
-
-String TEncoding::UTF8 = L"UTF-8";
 
 inline std::vector<uint8_t> GetPreamble()
 {
@@ -172,6 +180,7 @@ public:
 	void AddError(const std::wstring& msg) {};
 	void AddError(const std::wstring& msg, const std::wstring& param1_name, const std::wstring& param1_value) {};
 	void AddError(const std::wstring& msg, const std::wstring& param1_name, const std::wstring& param1_value, const std::wstring& param2_name, const std::wstring& param2_value) {};
+	void AddError(const std::wstring& msg, const std::wstring& param1_name, const std::wstring& param1_value, const std::wstring& param2_name, const std::wstring& param2_value, const std::wstring& param3_name, const std::wstring& param3_value) {};
 };
 
 // Определение глобальных переменных
@@ -182,4 +191,31 @@ extern MessageRegistrator* msreg;
 #ifndef INFINITE
 #define INFINITE 0xFFFFFFFF
 #endif
+
+// Определение перечисления для замены строк
+enum TReplaceFlags {
+	rfReplaceAll = 1
+};
+
+
+// Функция для замены строк
+inline String StringReplace(const String& source, const String& oldStr, const String& newStr, TReplaceFlags flags) {
+	String result = source;
+	if (flags & rfReplaceAll) {
+		size_t pos = 0;
+		while ((pos = result.find(oldStr, pos)) != String::npos) {
+			result.replace(pos, oldStr.length(), newStr);
+			pos += newStr.length();
+		}
+	}
+	return result;
+}
+
+// Функция для преобразования в hex
+inline String tohex(int value) {
+	std::wstringstream ss;
+	ss << std::hex << value;
+	return ss.str();
+}
+
 #endif

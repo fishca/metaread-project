@@ -1,6 +1,8 @@
 //---------------------------------------------------------------------------
 
 #include <typeinfo>
+#include <cctype>
+#include <algorithm>
 
 #include "MetaData.h"
 #include "vcl.h"
@@ -9,16 +11,15 @@
 #include "MessageRegistration.h"
 #include "FileFormat.h"
 #include "CRC32.h"
-#include "StringUtils.h"
-#include "StringUtils.h"
 
 //---------------------------------------------------------------------------
+
 
 //#pragma package(smart_init)
 
 
 //---------------------------------------------------------------------------
-TGUID EmptyUID;
+extern TGUID EmptyUID;
 static struct EmptyUIDInit {
     EmptyUIDInit() { memset(EmptyUID.Data, 0, 16); }
 } emptyUIDInit;
@@ -108,7 +109,7 @@ bool operator<(const TGUID& l, const TGUID& r)
 //********************************************************
 // Функции
 
-#define error if(msreg) msreg->AddError
+#define error(msg, ...) if(msreg) { std::wstringstream ss; ss << msg; msreg->AddError(ss.str()); }
 
 //---------------------------------------------------------------------------
 
@@ -506,19 +507,7 @@ Class* Class::getclass(const TGUID& id)
 // Класс ClassItem
 
 //---------------------------------------------------------------------------
-void ClassItem::setversion(int v)
-{
-	fversion = v;
-	fversionisset = true;
-}
-
-//---------------------------------------------------------------------------
-int ClassItem::getversion() const
-{
-	if(fversionisset) return fversion;
-	error(L"Ошибка формата потока 117. Ошибка получения значения переменной ВерсияКласса. Значение не установлено.");
-	return -1;
-}
+// Эти функции уже определены в заголовочном файле как inline
 
 //---------------------------------------------------------------------------
 
@@ -967,17 +956,17 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 				case stv_uid:
 					if(!string_to_GUID(sval1, &uid1))
 					{
-						error(L"Ошибка загрузки статических типов. Ошибка преобразования УИД в константе дерева сериализации"
-							, L"Тип", owner->getname()
-							, L"Путь", path()
-							, L"УИД", sval1);
+						error(L"Ошибка загрузки статических типов. Ошибка преобразования УИД в константе дерева сериализации",
+							L"Тип", owner->getname(),
+							L"Путь", path(),
+							L"УИД", sval1);
 					}
 					break;
 				default:
-					AddError(L"Ошибка загрузки статических типов");
+					error(L"Ошибка загрузки статических типов"
 						, L"Тип", owner->getname()
 						, L"Путь", path()
-						, L"Тип значения", (int)typeval1);
+						, L"Тип значения", std::to_wstring((int)typeval1));
 			}
 			break;
 		case stt_var:
@@ -995,7 +984,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 					, L"Имя свойства", sval1);
 			}
 			typeprop = NULL;
-			if(!stval->IsEmpty())
+			if(!IsEmpty(stval))
 			{
 				typeprop = MetaTypeSet::staticTypes->getTypeByName(stval);
 				if(!typeprop) error(L"Ошибка загрузки статических типов. Некорректное имя типа свойства"
@@ -1025,11 +1014,11 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			else if(Compare(str, String(L"%")) == 0)
 			{
 				typeval1 = stv_var;
-				str1 = sval1.SubString(2, Length(sval1) - 1);
+				str1 = StringUtils::SubString(sval1, 2, Length(sval1) - 1);
 			}
 			else if(Compare(str, String(L".")) == 0)
 			{
-				sval1 = sval1.SubString(2, Length(sval1) - 1);
+				sval1 = sval1.substr(1);
 				typeval1 = stv_prop;
 				prop1 = owner->getProperty(sval1);
 				if(!prop1)
@@ -1043,10 +1032,14 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			else
 			{
 				str = SubString(sval1, 1, 2);
-				if(str.CompareIC(L"N'") == 0)
+				if(StringUtils::CompareIC(str, L"N'") == 0)
 				{
 					typeval1 = stv_number;
-					num1 = sval1.SubString(3, Length(sval1) - 2).ToIntDef(0);
+					try {
+						num1 = std::stoi(sval1.substr(2, sval1.size() - 3));
+					} catch (...) {
+						num1 = 0;
+					}
 				}
 				else
 				{
@@ -1057,7 +1050,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 				}
 			}
 			typeprop = NULL;
-			if(!stval->IsEmpty())
+		if(!IsEmpty(stval))
 			{
 				typeprop = MetaTypeSet::staticTypes->getTypeByName(stval);
 				if(!typeprop) error(L"Ошибка загрузки статических типов. Некорректное имя типа элемента коллекции"
@@ -1071,7 +1064,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			for(i = 0; i < owner->getgeneratedtypes().size(); ++i)
 			    if(CompareIC(sval1, owner->getgeneratedtypes()[i]->getname()) == 0)
 			{
-				gentype = owner->generatedtypes[i];
+				gentype = owner->getgeneratedtypes()[i];
 			}
 			if(!gentype)
 			{
@@ -1095,11 +1088,11 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			if(Compare(str, String(L"%")) == 0)
 			{
 				typeval1 = stv_var;
-				str1 = StringUtils::SubString(sval1, 2, StringUtils::Length(sval1) - 1);
+				str1 = sval1.substr(1);
 			}
 			else if(Compare(str, String(L".")) == 0)
 			{
-				sval1 = sval1.SubString(2, Length(sval1) - 1);
+				sval1 = StringUtils::SubString(sval1, 2, Length(sval1) - 1);
 				typeval1 = stv_prop;
 				prop1 = owner->getProperty(sval1);
 				if(!prop1)
@@ -1112,17 +1105,17 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 			else if(Compare(str, String(L"*")) == 0)
 			{
-				sval1 = sval1.SubString(2, Length(sval1) - 1);
+				sval1 = StringUtils::SubString(sval1, 2, Length(sval1) - 1);
 				typeval1 = stv_value;
 				val1 = NULL;
 				i = Pos(L".", sval1);
 				if(i)
 				{
-					str = sval1.SubString(1, i - 1);
+					str = StringUtils::SubString(sval1, 1, i - 1);
 					typ = MetaTypeSet::staticTypes->getTypeByName(str);
 					if(typ)
 					{
-						str = sval1.SubString(i + 1, Length(sval1) - i);
+						str = StringUtils::SubString(sval1, i + 1, Length(sval1) - i);
 						val1 = typ->getValue(str);
 					}
 				}
@@ -1137,7 +1130,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 			else if(Compare(str, String(L"v")) == 0)
 			{
-				sval1 = sval1.SubString(2, Length(sval1) - 1);
+				sval1 = StringUtils::SubString(sval1, 2, Length(sval1) - 1);
 				typeval1 = stv_vercon;
 				if(sval1 == L"2.0") vercon1 = cv_2_0;
 				else if(sval1 == L"5.0") vercon1 = cv_5_0;
@@ -1156,7 +1149,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 			else if(Compare(str, String(L":")) == 0)
 			{
-				sval1 = sval1.SubString(2, Length(sval1) - 1);
+				sval1 = StringUtils::SubString(sval1, 2, Length(sval1) - 1);
 				typeval1 = stv_ver1C;
 				ver1C1 = stringtover1C(sval1);
 				if(ver1C1 == v1C_min)
@@ -1169,7 +1162,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 			else if(Compare(str, String(L"&")) == 0)
 			{
-				sval1 = sval1.SubString(2, Length(sval1) - 1);
+				sval1 = StringUtils::SubString(sval1, 2, Length(sval1) - 1);
 				typeval1 = stv_classpar;
 				classpar1 = ClassParameter::getparam(sval1);
 				if(!classpar1)
@@ -1183,7 +1176,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			else if(Compare(str, String(L"~")) == 0)
 			{
 				typeval1 = stv_globalvar;
-				str1 = sval1.SubString(2, Length(sval1) - 1);
+				str1 = StringUtils::SubString(sval1, 2, Length(sval1) - 1);
 			}
 			else
 			{
@@ -1191,17 +1184,17 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 				if(CompareIC(str, L"S'") == 0)
 				{
 					typeval1 = stv_string;
-					str1 = sval1.SubString(3, Length(sval1) - 2);
+					str1 = StringUtils::SubString(sval1, 3, Length(sval1) - 2);
 				}
-				else if(str.CompareIC(L"N'") == 0)
+				else if(StringUtils::CompareIC(str, L"N'") == 0)
 				{
 					typeval1 = stv_number;
-					num1 = sval1.SubString(3, Length(sval1) - 2).ToIntDef(0);
+					num1 = StringUtils::ToIntDef(StringUtils::SubString(sval1, 3, Length(sval1) - 2), 0);
 				}
-				else if(str.CompareIC(L"U'") == 0)
+				else if(StringUtils::CompareIC(str, L"U'") == 0)
 				{
 					typeval1 = stv_uid;
-					if(!string_to_GUID(sval1.SubString(3, Length(sval1) - 2), &uid1))
+					if(!string_to_GUID(StringUtils::SubString(sval1, 3, Length(sval1) - 2), &uid1))
 					{
 						error(L"Ошибка загрузки статических типов. Ошибка преобразования УИД в условии дерева сериализации"
 							, L"Тип", owner->getname()
@@ -1222,11 +1215,11 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			if(Compare(str, String(L"%")) == 0)
 			{
 				typeval2 = stv_var;
-				str2 = sval2.SubString(2, Length(sval2) - 1);
+				str2 = StringUtils::SubString(sval2, 2, Length(sval2) - 1);
 			}
 			else if(Compare(str, String(L".")) == 0)
 			{
-				sval2 = sval2.SubString(2, Length(sval2) - 1);
+				sval2 = StringUtils::SubString(sval2, 2, Length(sval2) - 1);
 				typeval2 = stv_prop;
 				prop2 = owner->getProperty(sval2);
 				if(!prop2)
@@ -1239,17 +1232,17 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 			else if(Compare(str, String(L"*")) == 0)
 			{
-				sval2 = sval2.SubString(2, Length(sval2) - 1);
+				sval2 = StringUtils::SubString(sval2, 2, Length(sval2) - 1);
 				typeval2 = stv_value;
 				val2 = NULL;
-				i = sval2.Pos(L".");
+				i = Pos(L".", sval2);
 				if(i)
 				{
-					str = sval2.SubString(1, i - 1);
+					str = StringUtils::SubString(sval2, 1, i - 1);
 					typ = MetaTypeSet::staticTypes->getTypeByName(str);
 					if(typ)
 					{
-						str = sval2.SubString(i + 1, Length(sval2) - i);
+						str = StringUtils::SubString(sval2, i + 1, Length(sval2) - i);
 						val2 = typ->getValue(str);
 					}
 				}
@@ -1264,7 +1257,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 			else if(Compare(str, String(L"v")) == 0)
 			{
-				sval2 = sval2.SubString(2, Length(sval2) - 1);
+				sval2 = StringUtils::SubString(sval2, 2, Length(sval2) - 1);
 				typeval2 = stv_vercon;
 				if(sval2 == L"2.0") vercon2 = cv_2_0;
 				else if(sval2 == L"5.0") vercon2 = cv_5_0;
@@ -1283,7 +1276,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 			else if(Compare(str, String(L":")) == 0)
 			{
-				sval2 = sval2.SubString(2, Length(sval2) - 1);
+				sval2 = StringUtils::SubString(sval2, 2, Length(sval2) - 1);
 				typeval2 = stv_ver1C;
 				ver1C2 = stringtover1C(sval2);
 				if(ver1C2 == v1C_min)
@@ -1296,7 +1289,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 			else if(Compare(str, String(L"&")) == 0)
 			{
-				sval2 = sval2.SubString(2, Length(sval2) - 1);
+				sval2 = StringUtils::SubString(sval2, 2, Length(sval2) - 1);
 				typeval2 = stv_classpar;
 				classpar2 = ClassParameter::getparam(sval2);
 				if(!classpar2)
@@ -1310,25 +1303,25 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			else if(Compare(str, String(L"~")) == 0)
 			{
 				typeval2 = stv_globalvar;
-				str2 = sval2.SubString(2, Length(sval2) - 1);
+				str2 = StringUtils::SubString(sval2, 2, Length(sval2) - 1);
 			}
 			else
 			{
 				str = SubString(sval2, 1, 2);
-				if(str.CompareIC(L"S'") == 0)
+				if(StringUtils::CompareIC(str, L"S'") == 0)
 				{
 					typeval2 = stv_string;
-					str2 = sval2.SubString(3, Length(sval2) - 2);
+					str2 = StringUtils::SubString(sval2, 3, Length(sval2) - 2);
 				}
-				else if(str.CompareIC(L"N'") == 0)
+				else if(StringUtils::CompareIC(str, L"N'") == 0)
 				{
 					typeval2 = stv_number;
-					num2 = sval2.SubString(3, Length(sval2) - 2).ToIntDef(0);
+					num2 = StringUtils::ToIntDef(StringUtils::SubString(sval2, 3, Length(sval2) - 2), 0);
 				}
-				else if(str.CompareIC(L"U'") == 0)
+				else if(StringUtils::CompareIC(str, L"U'") == 0)
 				{
 					typeval2 = stv_uid;
-					if(!string_to_GUID(sval2.SubString(3, Length(sval2) - 2), &uid2))
+					if(!string_to_GUID(StringUtils::SubString(sval2, 3, Length(sval2) - 2), &uid2))
 					{
 						error(L"Ошибка загрузки статических типов. Ошибка преобразования УИД в условии дерева сериализации"
 							, L"Тип", owner->getname()
@@ -1387,7 +1380,7 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 			}
 
 			typeprop = NULL;
-			if(!stvalIsEmpty()
+			if(stval.length() > 0)
 			{
 				typeprop = MetaTypeSet::staticTypes->getTypeByName(stval);
 				if(!typeprop) error(L"Ошибка загрузки статических типов. Некорректное имя типа в узле дерева сериализации ИД-элемент"
@@ -1415,22 +1408,22 @@ SerializationTreeNode::SerializationTreeNode(MetaType* _owner, tree* tr, Seriali
 	}
 
 	tr = tr->get_next();
-	nomove = tr->get_value().Compare(L"1") == 0 ? true : false;
+	nomove = StringUtils::Compare(tr->get_value(), L"1") == 0 ? true : false;
 
 	tr = tr->get_next();
-	isref = tr->get_value().Compare(L"1") == 0 ? true : false;
+	isref = StringUtils::Compare(tr->get_value(), L"1") == 0 ? true : false;
 
 	tr = tr->get_next();
-	isrefpre = tr->get_value().Compare(L"1") == 0 ? true : false;
+	isrefpre = StringUtils::Compare(tr->get_value(), L"1") == 0 ? true : false;
 
 	tr = tr->get_next();
-	isright = tr->get_value().Compare(L"1") == 0 ? true : false;
+	isright = StringUtils::Compare(tr->get_value(), L"1") == 0 ? true : false;
 
 	tr = tr->get_next();
-	exnernal = tr->get_value().Compare(L"1") == 0 ? true : false;
+	exnernal = StringUtils::Compare(tr->get_value(), L"1") == 0 ? true : false;
 
 	tr = tr->get_next();
-	binsertype = (BinarySerializationType)(tr->get_value().ToIntDef(0));
+	binsertype = (BinarySerializationType)(StringUtils::ToIntDef(tr->get_value(), 0));
 
 	tr = tr->get_next();
 	binformat = (ExternalFileFormat)(ToIntDef(tr->get_value(), 0));
@@ -1471,7 +1464,7 @@ String SerializationTreeNode::path() const
 
 	for(stn = parent, path = index; stn; stn = stn->parent)
 	{
-		path = String(stn->index) + ":" + path;
+		path = std::to_wstring(stn->index) + L":" + path;
 	}
 	return path;
 }
@@ -1576,7 +1569,7 @@ MetaType::MetaType(MetaTypeSet* _typeSet, tree* tr) : typeSet(_typeSet)
 	tt = tt->get_next();
 	fpreidindex = ToIntDef(tt->get_value(), 0);
 	tt = tt->get_next();
-	fmeta = tt->get_value().Compare(L"1") == 0 ? true : false;
+	fmeta = Compare(tt->get_value(), L"1") == 0 ? true : false;
 	tt = tt->get_next();
 	fexporttype = (ExportType)(ToIntDef(tt->get_value(), 0));
 	tt = tt->get_next();
@@ -1592,8 +1585,8 @@ MetaType::MetaType(MetaTypeSet* _typeSet, tree* tr) : typeSet(_typeSet)
 		t = t->get_next();
 		MetaProperty* mp = new MetaProperty(this, t);
 		fproperties.push_back(mp);
-		fproperties_by_name[mp->UpperCase(name)] = mp;
-		fproperties_by_name[mp->UpperCase(ename)] = mp;
+		fproperties_by_name[StringUtils::UpperCase(mp->getname())] = mp;
+		fproperties_by_name[StringUtils::UpperCase(mp->getename())] = mp;
 	}
 
 	// Элементы коллекции
@@ -1615,8 +1608,8 @@ MetaType::MetaType(MetaTypeSet* _typeSet, tree* tr) : typeSet(_typeSet)
 		t = t->get_next();
 		MetaValue* mv = new MetaValue(this, t);
 		fvalues.push_back(mv);
-		fvalues_by_name[mv->UpperCase(name)] = mv;
-		fvalues_by_name[mv->UpperCase(ename)] = mv;
+		fvalues_by_name[StringUtils::UpperCase(mv->getname())] = mv;
+		fvalues_by_name[StringUtils::UpperCase(mv->getename())] = mv;
 		fvalues_by_value[mv->getvalue()] = mv;
 	}
 
@@ -1633,7 +1626,7 @@ MetaType::MetaType(MetaTypeSet* _typeSet, tree* tr) : typeSet(_typeSet)
 		t = t->get_next();
 		gt = new MetaGeneratedType(t);
 		fgeneratedtypes.push_back(gt);
-		if(gt->getname().CompareIC(L"Ссылка") == 0) gentypeRef = gt;
+		if(StringUtils::CompareIC(gt->getname(), L"Ссылка") == 0) gentypeRef = gt;
 	}
 
 	fserializationtree = NULL;
@@ -1706,7 +1699,7 @@ void MetaType::fillcollectiontypes()
 MetaProperty* MetaType::getProperty(const String& n)
 {
 	std::map<String, MetaProperty*>::iterator i;
-	i = fproperties_by_name.find(UpperCase(n));
+	i = fproperties_by_name.find(StringUtils::UpperCase(n));
 	if(i == fproperties_by_name.end()) return NULL;
 	return i->second;
 }
@@ -1727,7 +1720,7 @@ int MetaType::numberOfProperties()
 MetaValue* MetaType::getValue(const String& n)
 {
 	std::map<String, MetaValue*>::iterator i;
-	i = fvalues_by_name.find(UpperCase(n));
+	i = fvalues_by_name.find(StringUtils::UpperCase(n));
 	if(i == fvalues_by_name.end()) return NULL;
 	return i->second;
 }
@@ -1758,17 +1751,17 @@ MetaTypeSet::~MetaTypeSet()
 void MetaTypeSet::add(MetaType* t)
 {
 	alltype.push_back(t);
-	mapname[t->UpperCase(name)] = t;
-	mapname[t->UpperCase(ename)] = t;
-	if(t->hasuid) mapuid[t->getuid()] = t;
+	mapname[StringUtils::UpperCase(t->getname())] = t;
+	mapname[StringUtils::UpperCase(t->getename())] = t;
+	if(t->gethasuid()) mapuid[t->getuid()] = t;
 }
 
 //---------------------------------------------------------------------------
 MetaType* MetaTypeSet::getTypeByName(const String& n)
 {
 	std::map<String, MetaType*>::iterator i;
-	if(nIsEmpty() return NULL;
-	i = mapname.find(UpperCase(n));
+	if(IsEmpty(n)) return NULL;
+	i = mapname.find(StringUtils::UpperCase(n));
 	if(i == mapname.end())
 	{
 		if(staticTypes) if(staticTypes != this) return staticTypes->getTypeByName(n);
@@ -1858,7 +1851,7 @@ void MetaTypeSet::staticTypesLoad(TStream* str)
 		switch(prop->defaultvaluetype)
 		{
 			case dvt_bool:
-				prop->dv_bool = t->get_value().Compare(L"1") == 0 ? true : false;
+				prop->dv_bool = Compare(t->get_value(), L"1") == 0 ? true : false;
 				break;
 			case dvt_number:
 				prop->dv_number = ToIntDef(t->get_value(), 0);
@@ -1904,8 +1897,8 @@ void MetaTypeSet::staticTypesLoad(TStream* str)
 		metaobj->setfullname(sn);
 		metaobj->setefullname(sen);
 		MetaObject::map[uid] = metaobj;
-		MetaObject::smap[UpperCase(sn)] = metaobj;
-		MetaObject::smap[UpperCase(sen)] = metaobj;
+		MetaObject::smap[StringUtils::UpperCase(sn)] = metaobj;
+		MetaObject::smap[StringUtils::UpperCase(sen)] = metaobj;
 	}
 
 	// Права
@@ -1961,7 +1954,7 @@ void MetaTypeSet::staticTypesLoad(TStream* str)
 	mt_tabsection = staticTypes->getTypeByName(L"ТабличнаяЧасть");
 	mt_metaref = staticTypes->getTypeByName(L"МетаСсылка");
 
-	for(j = 0; j < MetaStandartTabularSection::list.size(); ++j) MetaStandartTabularSection::list[j]->_class = Class::getclass(MetaStandartTabularSection::list[j]->getcl()ass_uid);
+	for(j = 0; j < MetaStandartTabularSection::list.size(); ++j) MetaStandartTabularSection::list[j]->set_class(Class::getclass(MetaStandartTabularSection::list[j]->class_uid));
 
 }
 
@@ -2059,7 +2052,7 @@ GeneratedType::GeneratedType(tree** ptr, String path)
 // Класс PredefinedValue
 
 //---------------------------------------------------------------------------;
-String _fastcall PredefinedValue::getfullname(bool english)
+String PredefinedValue::getfullname(bool english)
 {
 	String s;
 	std::map<MetaGeneratedType*, GeneratedType*>::iterator i;
@@ -2071,8 +2064,8 @@ String _fastcall PredefinedValue::getfullname(bool english)
 		i = owner->v_objgentypes.find(owner->type->gentypeRef);
 		if(i != owner->v_objgentypes.end())
 		{
-			t = owner->owner->types->getTypeByUID( i->second->typeuid);
-			if(english) s = t->ename;
+			t = owner->owner->gettypes()->getTypeByUID( i->second->typeuid);
+			if(english) s = t->getename();
 			else s = t->getname();
 			s += L".";
 		}
@@ -2101,7 +2094,7 @@ String Value1C::path(MetaContainer* mc, bool english)
 	unsigned int i, j;
 
 	if(!parent) return L"";
-	if(type == mc->types->mt_config) return L"";
+	if(type == mc->gettypes()->mt_config) return L"";
 	j = parent->v_objpropv.size();
 	if(index < 0)
 	{
@@ -2112,7 +2105,7 @@ String Value1C::path(MetaContainer* mc, bool english)
 		for(i = 0; i < parent->v_objcol.size(); ++i) if(parent->v_objcol[i] == this)
 		{
 			String s = presentation(english);
-			if(sIsEmpty() return String(L"[") + i + L"]";
+			if(IsEmpty(s)) return String(L"[") + std::to_wstring(i) + L"]";
 			else return s;
 		}
 	}
@@ -2123,9 +2116,9 @@ String Value1C::path(MetaContainer* mc, bool english)
 		else
 		{
 			String s = presentation(english);
-			if(sIsEmpty() return String(L"[") + (i - j) + L"]";
+			if(IsEmpty(s)) return String(L"[") + std::to_wstring(i - j) + L"]";
 			else return s;
-		}
+		};
 	}
 	return L"???";
 }
@@ -2220,7 +2213,7 @@ bool Value1C_string::Export(const String& path, TStreamWriter* str, int indent, 
 bool Value1C_string::isempty()
 {
 	if(!this) return true;
-	return v_stringIsEmpty(;
+	return IsEmpty(v_string);
 }
 
 //---------------------------------------------------------------------------
@@ -2314,7 +2307,7 @@ Value1C_date::Value1C_date(Value1C_obj* _parent) : Value1C(_parent){
 //---------------------------------------------------------------------------
 String Value1C_date::presentation(bool english)
 {
-	return date_to_string(v_date);
+	return date_to_string((char*)v_date);
 }
 
 //---------------------------------------------------------------------------
@@ -2328,7 +2321,7 @@ bool Value1C_date::Export(const String& path, TStreamWriter* str, int indent, bo
 {
 	String s;
 	s = L"'";
-	s += date_to_string1C(v_date);
+	s += date_to_string1C((char*)v_date);
 	s += L"'";
 	str->Write(s);
 	return true;
@@ -2452,7 +2445,7 @@ bool Value1C_type::Export(const String& path, TStreamWriter* str, int indent, bo
 {
 	String s;
 	if(!v_type) return false;
-	s = english ? v_type->ename : v_type->getname();
+	s = english ? v_type->getename() : v_type->getname();
 	str->Write(s);
 	return true;
 }
@@ -2530,7 +2523,7 @@ bool Value1C_enum::Export(const String& path, TStreamWriter* str, int indent, bo
 {
 	String s;
 	if(!v_enum) return false;
-	s = english ? v_enum->ename : v_enum->getname();
+	s = english ? v_enum->getename() : v_enum->getname();
 	str->Write(s);
 	return true;
 }
@@ -2560,7 +2553,7 @@ String Value1C_stdattr::presentation(bool english)
 {
 	if(v_stdattr)
 	{
-		if(v_stdattr->count) return v_stdattr->getname(english) + (v_value + 1);
+		if(v_stdattr->getcount()) return v_stdattr->getname(english) + std::to_wstring(v_value + 1);
 		else return v_stdattr->getname(english);
 	}
 	if(english) return L"Unknown_standard_attribute";
@@ -2656,7 +2649,7 @@ String Value1C_obj::presentation(bool english)
 
 	if(type)
 	{
-		if(type->getname().CompareIC(L"МногоязычнаяСтрока") == 0 || type->getname().CompareIC(L"МногоязычнаяСтрокаВнутр") == 0)
+		if(CompareIC(type->getname(), L"МногоязычнаяСтрока") == 0 || CompareIC(type->getname(), L"МногоязычнаяСтрокаВнутр") == 0)
 		{
 			if(v_objcol.size() > 0)
 			{
@@ -2665,77 +2658,77 @@ String Value1C_obj::presentation(bool english)
 				if(v) return v->presentation(english);
 			}
 		}
-		else if(type->getname().CompareIC(L"Реквизит") == 0)
+		else if(CompareIC(type->getname(), L"Реквизит") == 0)
 		{
 			v = getproperty(L"Реквизит");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ТабличнаяЧасть") == 0)
+		else if(CompareIC(type->getname(), L"ТабличнаяЧасть") == 0)
 		{
 			v = getproperty(L"ТабличнаяЧасть");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"СтрокаНаЯзыке") == 0 || type->getname().CompareIC(L"СтрокаНаЯзыкеВнутр") == 0)
+		else if(CompareIC(type->getname(), L"СтрокаНаЯзыке") == 0 || CompareIC(type->getname(), L"СтрокаНаЯзыкеВнутр") == 0)
 		{
 			v = getproperty(L"КодЯзыка");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ВариантHTMLДокумента") == 0)
+		else if(CompareIC(type->getname(), L"ВариантHTMLДокумента") == 0)
 		{
 			v = getproperty(L"КодЯзыка");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"КлючИЗначение") == 0)
+		else if(CompareIC(type->getname(), L"КлючИЗначение") == 0)
 		{
 			v = getproperty(L"Ключ");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ЭлементПрав") == 0)
+		else if(CompareIC(type->getname(), L"ЭлементПрав") == 0)
 		{
 			v = getproperty(L"Право");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ОграничениеДоступаКДанным") == 0)
+		else if(CompareIC(type->getname(), L"ОграничениеДоступаКДанным") == 0)
 		{
 			v = getproperty(L"Право");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ПраваНаОбъект") == 0)
+		else if(CompareIC(type->getname(), L"ПраваНаОбъект") == 0)
 		{
 			v = getproperty(L"Объект");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ОбъектМетаданныхСсылка") == 0)
+		else if(CompareIC(type->getname(), L"ОбъектМетаданныхСсылка") == 0)
 		{
 			v = getproperty(L"ОбъектМетаданных");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ОписаниеСтандартногоРеквизита") == 0)
+		else if(CompareIC(type->getname(), L"ОписаниеСтандартногоРеквизита") == 0)
 		{
 			v = getproperty(L"СтандартныйРеквизит");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ОписаниеСтандартнойТабличнойЧасти") == 0)
+		else if(CompareIC(type->getname(), L"ОписаниеСтандартнойТабличнойЧасти") == 0)
 		{
 			v = getproperty(L"СтандартнаяТабличнаяЧасть");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ОписаниеТипа") == 0)
+		else if(CompareIC(type->getname(), L"ОписаниеТипа") == 0)
 		{
 			v = getproperty(L"Тип");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ФайлКартинки") == 0)
+		else if(CompareIC(type->getname(), L"ФайлКартинки") == 0)
 		{
 			v = getproperty(L"ИмяФайла");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ГруппаКоманд") == 0)
+		else if(CompareIC(type->getname(), L"ГруппаКоманд") == 0)
 		{
 			v = getproperty(L"Группа");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ОписаниеТипов") == 0)
+		else if(CompareIC(type->getname(), L"ОписаниеТипов") == 0)
 		{
 			//s = L"";
 			for(i = 0; i < v_objcol.size(); ++i)
@@ -2749,7 +2742,7 @@ String Value1C_obj::presentation(bool english)
 			}
 			return s;
 		}
-		else if(type->getname().CompareIC(L"РасширенноеИмяXML") == 0)
+		else if(CompareIC(type->getname(), L"РасширенноеИмяXML") == 0)
 		{
 			v = getproperty(L"URIПространстваИмен");
 			v2 = getproperty(L"ЛокальноеИмя");
@@ -2762,33 +2755,33 @@ String Value1C_obj::presentation(bool english)
 				return s;
 			}
 		}
-		else if(type->getname().CompareIC(L"СочетаниеКлавиш") == 0)
+		else if(CompareIC(type->getname(), L"СочетаниеКлавиш") == 0)
 		{
 			v = getproperty(L"Модификатор");
 			v2 = getproperty(L"Клавиша");
 			if(v && v2)
 			{
 				s = v2->presentation(english);
-				if(Length(s) == 2) if(s[1] == L'_') s = SubString(s, 2, 1);
+				if(Length(s) == 2) if(s[1] == L'_') s = StringUtils::SubString(s, 2, 1);
 				return v->presentation(english) + s;
 			}
 		}
-		else if(type->getname().CompareIC(L"ЭлементСоставаОбщегоРеквизита") == 0)
+		else if(CompareIC(type->getname(), L"ЭлементСоставаОбщегоРеквизита") == 0)
 		{
 			v = getproperty(L"Метаданные");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ЭлементСоставаФункциональнойОпции") == 0)
+		else if(CompareIC(type->getname(), L"ЭлементСоставаФункциональнойОпции") == 0)
 		{
 			v = getproperty(L"Объект");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"Ссылка") == 0)
+		else if(CompareIC(type->getname(), L"Ссылка") == 0)
 		{
 			v = getproperty(L"Ссылка");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ПредопределенноеЗначение") == 0 || type->getname().CompareIC(L"ПредопределенноеЗначение2") == 0)
+		else if(CompareIC(type->getname(), L"ПредопределенноеЗначение") == 0 || CompareIC(type->getname(), L"ПредопределенноеЗначение2") == 0)
 		{
 			v = getproperty(L"Тип");
 			v2 = getproperty(L"Значение");
@@ -2796,36 +2789,36 @@ String Value1C_obj::presentation(bool english)
 			else s = L"";
 			if(v2) s2 = v2->presentation(english);
 			else s2 = L"";
-			if(sIsEmpty()
+			if(IsEmpty(s))
 			{
 				if(english) s = L"<Empty type>";
 				else s = L"<Пустой тип>";
 			}
-			if(s2IsEmpty()
+			if(IsEmpty(s2))
 			{
 				if(english) s2 = L"<Empty ref>";
 				else s2 = L"<Пустая ссылка>";
 			}
 			return s + L"." + s2;
 		}
-		else if(type->getname().CompareIC(L"Цвет") == 0 || type->getname().CompareIC(L"ЦветВнутр") == 0)
+		else if(CompareIC(type->getname(), L"Цвет") == 0 || CompareIC(type->getname(), L"ЦветВнутр") == 0)
 		{
 			ve = (Value1C_enum*)getproperty(L"Вид");
 			if(ve) if(ve->kind == kv_enum)
 			{
-				if(ve->v_enum->getname(false).CompareIC(L"АвтоЦвет") == 0) return english ? L"Auto" : L"Авто";
+				if(CompareIC(ve->v_enum->getname(false), L"АвтоЦвет") == 0) return english ? L"Auto" : L"Авто";
 				v2 = getproperty(L"Значение");
 				if(v2) return v2->presentation(english);
 				return ve->presentation(english);
 			}
 		}
-		else if(type->getname().CompareIC(L"Шрифт") == 0 || type->getname().CompareIC(L"ШрифтВнутр") == 0)
+		else if(CompareIC(type->getname(), L"Шрифт") == 0 || CompareIC(type->getname(), L"ШрифтВнутр") == 0)
 		{
 			ve = (Value1C_enum*)getproperty(L"Вид");
 			if(ve) if(ve->kind == kv_enum)
 			{
-				if(ve->v_enum->getname(false).CompareIC(L"АвтоШрифт") == 0) return english ? L"Auto" : L"Авто";
-				if(ve->v_enum->getname(false).CompareIC(L"ЭлементСтиля") == 0)
+				if(CompareIC(ve->v_enum->getname(false), L"АвтоШрифт") == 0) return english ? L"Auto" : L"Авто";
+				if(CompareIC(ve->v_enum->getname(false), L"ЭлементСтиля") == 0)
 				{
 					v = getproperty(L"Значение");
 					if(v) return v->presentation(english);
@@ -2846,36 +2839,36 @@ String Value1C_obj::presentation(bool english)
 			v = getproperty(L"Значение");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ЭлементСоставаПланаОбмена") == 0)
+		else if(CompareIC(type->getname(), L"ЭлементСоставаПланаОбмена") == 0)
 		{
 			v = getproperty(L"Метаданные");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ЗначениеРоли") == 0)
+		else if(CompareIC(type->getname(), L"ЗначениеРоли") == 0)
 		{
 			v = getproperty(L"Роль");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ОграничениеПолей") == 0)
+		else if(CompareIC(type->getname(), L"ОграничениеПолей") == 0)
 		{
 			v = getproperty(L"Поля");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"СтандартнаяПанель") == 0)
+		else if(CompareIC(type->getname(), L"СтандартнаяПанель") == 0)
 		{
 			v = getproperty(L"СтандартнаяПанель");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"ПоложениеИнтерфейса") == 0)
+		else if(CompareIC(type->getname(), L"ПоложениеИнтерфейса") == 0)
 		{
 			v = getproperty(L"Положение");
 			if(v) return v->presentation(english);
 		}
-		else if(type->getname().CompareIC(L"МетаСсылка") == 0)
+		else if(CompareIC(type->getname(), L"МетаСсылка") == 0)
 		{
 			v = getproperty(L"Объект");
 			if(v) s = v->presentation(english);
-			else s = "";
+			else s = L"";
 			v = getproperty(L"СтандартнаяТабличнаяЧасть");
 			if(v)
 			{
@@ -2890,32 +2883,32 @@ String Value1C_obj::presentation(bool english)
 			}
 			return s;
 		}
-		else if(type->getname().CompareIC(L"ЭлементИнтерфейса") == 0)
+		else if(CompareIC(type->getname(), L"ЭлементИнтерфейса") == 0)
 		{
 			v = getproperty(L"Вид");
 			if(v) if(v->kind == kv_enum)
 			{
-				if(((Value1C_enum*)v)->v_enum->getname().CompareIC(L"Группа") == 0) return v->presentation(english);
+				if(CompareIC(((Value1C_enum*)v)->v_enum->getname(), L"Группа") == 0) return v->presentation(english);
 				v = getproperty(L"СтандартнаяПанель");
 				s = v->presentation(english);
-				if(sIsEmpty() return english ? L"<StandardPanel>" : L"<СтандартнаяПанель>";
+				if(IsEmpty(s)) return english ? L"<StandardPanel>" : L"<СтандартнаяПанель>";
 				return s;
 			}
 		}
-		else if(type->getname().CompareIC(L"ПолеСОграничением") == 0)
+		else if(CompareIC(type->getname(), L"ПолеСОграничением") == 0)
 		{
 			v = getproperty(L"Реквизит");
 			if(v) s = v->presentation(english);
-			else s = "";
-			if(s.Pos(L".") == 0)
+			else s = L"";
+			if(Pos(L".", s) == 0)
 			{
 				v = getproperty(L"ТабличнаяЧасть");
 				if(v)
 				{
 					s2 = v->presentation(english);
-					if(!s2IsEmpty()
+					if(!IsEmpty(s2))
 					{
-						if(!sIsEmpty(){
+						if(!IsEmpty(s)){
 							s2 += L".";
 							s2 += s;
 						}
@@ -2925,7 +2918,7 @@ String Value1C_obj::presentation(bool english)
 			}
 			return s;
 		}
-		else if(type->getname().CompareIC(L"ПоляСОграничением") == 0)
+		else if(CompareIC(type->getname(), L"ПоляСОграничением") == 0)
 		{
 			if(!v_objcol.size()) return english ? L"<Other fields>" : L"<Прочие поля>";
 			for(i = 0; i < v_objcol.size(); ++i)
@@ -2954,52 +2947,52 @@ String Value1C_obj::valuepresentation(bool english)
 
 	if(!type) return L"";
 
-	if(type->getname().CompareIC(L"СтрокаНаЯзыке") == 0 || type->getname().CompareIC(L"СтрокаНаЯзыкеВнутр") == 0)
+	if(CompareIC(type->getname(), L"СтрокаНаЯзыке") == 0 || CompareIC(type->getname(), L"СтрокаНаЯзыкеВнутр") == 0)
 	{
 		v = getproperty(L"Строка");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"КлючИЗначение") == 0)
+	else if(CompareIC(type->getname(), L"КлючИЗначение") == 0)
 	{
 		v = getproperty(L"Значение");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"ЭлементПрав") == 0)
+	else if(CompareIC(type->getname(), L"ЭлементПрав") == 0)
 	{
 		v = getproperty(L"Доступность");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"СвязьПараметраВыбора") == 0)
+	else if(CompareIC(type->getname(), L"СвязьПараметраВыбора") == 0)
 	{
 		v = getproperty(L"Реквизит");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"КолонкаДереваЗначений") == 0)
+	else if(CompareIC(type->getname(), L"КолонкаДереваЗначений") == 0)
 	{
 		v = getproperty(L"ТипЗначения");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"КолонкаТаблицыЗначений") == 0)
+	else if(CompareIC(type->getname(), L"КолонкаТаблицыЗначений") == 0)
 	{
 		v = getproperty(L"ТипЗначения");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"ЭлементСоставаПланаОбмена") == 0)
+	else if(CompareIC(type->getname(), L"ЭлементСоставаПланаОбмена") == 0)
 	{
 		v = getproperty(L"АвтоРегистрация");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"ЗначениеРоли") == 0)
+	else if(CompareIC(type->getname(), L"ЗначениеРоли") == 0)
 	{
 		v = getproperty(L"Значение");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"ПараметрВыбора") == 0)
+	else if(CompareIC(type->getname(), L"ПараметрВыбора") == 0)
 	{
 		v = getproperty(L"Значение");
 		if(v) return v->presentation(english);
 	}
-	else if(type->getname().CompareIC(L"ОграничениеПолей") == 0)
+	else if(CompareIC(type->getname(), L"ОграничениеПолей") == 0)
 	{
 		v = getproperty(L"Ограничение");
 		if(v) return v->presentation(english);
@@ -3111,8 +3104,9 @@ bool Value1C_obj::Export(const String& path, TStreamWriter* str, int indent, boo
 		else
 		{
 			fs = new TFileStream(path + (english ? L"\\!Properties" : L"\\!Свойства"), fmCreate);
-			fs->Write(TEncoding::UTF8->GetPreamble(), TEncoding::UTF8->GetPreamble().Length);
-			strp = new TStreamWriter(fs, TEncoding::UTF8, 1024);
+			auto preamble = GetPreamble();
+			fs->Write((char*)preamble.data(), preamble.size());
+			strp = new TStreamWriter(fs, nullptr, 1024);
 		}
 
 		is = String(indentstring, indent);
@@ -3122,17 +3116,17 @@ bool Value1C_obj::Export(const String& path, TStreamWriter* str, int indent, boo
 			if(!v) continue;
 			if(v->isempty()) continue;
 			p = v_objpropv[i].first;
-			if(compare(p, v)) continue;
 			pname = p->getname(english);
-			exporttype = p->exporttype;
-			if(exporttype == et_default) if(v->type) exporttype = v->type->exporttype;
+			exporttype = p->getexporttype();
+			if(exporttype == et_default) if(v->type) exporttype = v->type->getexporttype();
 			if(exporttype == et_default) if(v->kind == kv_binary) if(((Value1C_binary*)v)->v_binformat != eff_servalue) exporttype = et_file;
 			needtype = false;
 			if(v->type)
 			{
-				if(p->types.size() != 1) needtype = true;
-				else if(p->types[0] == MetaTypeSet::mt_typedescrinternal && v->type == MetaTypeSet::mt_type);
-				else if(p->types[0] != v->type) needtype = true;
+				auto types = p->gettypes();
+				if(types.size() != 1) needtype = true;
+				else if(types[0] == MetaTypeSet::mt_typedescrinternal && v->type == MetaTypeSet::mt_type);
+				else if(types[0] != v->type) needtype = true;
 			}
 			if(exporttype == et_catalog)
 			{
@@ -3165,27 +3159,27 @@ bool Value1C_obj::Export(const String& path, TStreamWriter* str, int indent, boo
 				if(v->kind == kv_binary)
 				{
 					vb = (Value1C_binary*)v;
-					if(type->getname(false).CompareIC(L"ШаблонОграничений") == 0)
+					if(CompareIC(type->getname(false), L"ШаблонОграничений") == 0)
 					{
-						fname = ((Value1C_string*)(getproperty(String(L"Имя"))))->v_string + L".rt";
+						fname = ((Value1C_string*)(getproperty(L"Имя")))->v_string + L".rt";
 					}
 					else
 					{
 						if(str && vb->v_binformat == eff_picture)
 						{
-							if(vb->parent->type->getname().CompareIC(L"ФайлКартинки") == 0) fname = pname + L"." + ((Value1C_string*)vb->parent->getproperty(L"ИмяФайла"))->v_string;
-							else fname = String::IntToHex(_crc32(vb->v_binary), 8) + L"." + vb->get_file_extension();
+							if(CompareIC(vb->parent->type->getname(), L"ФайлКартинки") == 0) fname = pname + L"." + ((Value1C_string*)vb->parent->getproperty(L"ИмяФайла"))->v_string;
+							else fname = std::to_wstring(_crc32(vb->v_binary)) + L"." + vb->get_file_extension();
 						}
 						else fname = pname + L"." + vb->get_file_extension();
 					}
 					npath = path + L"\\" + fname;
 					fsb = new TFileStream(npath, fmCreate);
-					fsb->CopyFrom(vb->v_binary, 0);
+					fsb->CopyFrom((TStream*)vb->v_binary, 0);
 					delete fsb;
 				}
 				else
 				{
-					if(type->getname(false).CompareIC(L"ШаблонОграничений") == 0)
+					if(CompareIC(type->getname(false), L"ШаблонОграничений") == 0)
 					{
 						fname = ((Value1C_string*)(getproperty(L"Имя")))->v_string + L".rt";
 					}
@@ -3196,8 +3190,9 @@ bool Value1C_obj::Export(const String& path, TStreamWriter* str, int indent, boo
 					}
 					npath = path + L"\\" + fname;
 					fsb = new TFileStream(npath, fmCreate);
-					fsb->Write(TEncoding::UTF8->GetPreamble(), TEncoding::UTF8->GetPreamble().Length);
-					strc = new TStreamWriter(fsb, TEncoding::UTF8, 1024);
+					auto preamble = GetPreamble();
+					fsb->Write((char*)preamble.data(), preamble.size());
+					strc = new TStreamWriter(fsb, nullptr, 1024);
 					if(v->kind == kv_string) strc->Write(((Value1C_string*)v)->v_string);
 					else v->Export(path, strc, 0, english);
 					delete strc;
@@ -3290,13 +3285,14 @@ bool Value1C_obj::Export(const String& path, TStreamWriter* str, int indent, boo
 		else
 		{
 			fs = new TFileStream(path + (english ? L"\\!Order" : L"\\!Порядок"), fmCreate);
-			fs->Write(TEncoding::UTF8->GetPreamble(), TEncoding::UTF8->GetPreamble().Length);
-			strc = new TStreamWriter(fs, TEncoding::UTF8, 1024);
+			auto preamble = GetPreamble();
+			fs->Write((char*)preamble.data(), preamble.size());
+			strc = new TStreamWriter(fs, nullptr, 1024);
 			for(i = 0; i < v_objcol.size(); ++i)
 			{
 				v = v_objcol[i];
 				pname = v->presentation(english);
-				if(pnameIsEmpty() pname = String(L"[") + i + L"]";
+				if(IsEmpty(pname)) pname = String(L"[") + std::to_wstring(i) + L"]";
 				npath = path + L"\\" + pname;
 				CreateDir(npath);
 				needtype = false;
@@ -3400,7 +3396,7 @@ bool Value1C_obj::compare(MetaProperty* p, Value1C* v)
 			break;
 		case dvt_string:
 			if(v->kind != kv_string) return false;
-			if(((Value1C_string*)v)->v_string.Compare(*p->dv_string) != 0) return false;
+			if(Compare(((Value1C_string*)v)->v_string, *p->dv_string) != 0) return false;
 			break;
 		case dvt_date:
 			if(v->kind != kv_date) return false;
@@ -3437,7 +3433,7 @@ Class* Value1C_obj::getclass(bool immediately)
 			i = (unsigned int)(v->index);
 			if(i < v->parent->v_objpropv.size())
 			{
-				cl = v->parent->v_objpropv[i].first->_class;
+				cl = v->parent->v_objpropv[i].first->get_class();
 				if(immediately) return cl;
 				if(cl) return cl;
 			}
@@ -3472,7 +3468,7 @@ String Value1C_metaobj::valuepresentation(bool english)
 
 	if(!type) return L"";
 
-	if(type->getname().CompareIC(L"ОбъектМетаданных: Реквизит") == 0)
+	if(CompareIC(type->getname(), L"ОбъектМетаданных: Реквизит") == 0)
 	{
 		v = getproperty(L"Тип");
 		if(v) return v->presentation(english);
@@ -3512,8 +3508,9 @@ bool Value1C_metaobj::Export(const String& path, TStreamWriter* str, int indent,
 	else
 	{
 		fs = new TFileStream(path + (english ? L"\\!Properties" : L"\\!Свойства"), fmCreate);
-		fs->Write(TEncoding::UTF8->GetPreamble(), TEncoding::UTF8->GetPreamble().Length);
-		strp = new TStreamWriter(fs, TEncoding::UTF8, 1024);
+		auto preamble = GetPreamble();
+		fs->Write((char*)preamble.data(), preamble.size());
+		strp = new TStreamWriter(fs, nullptr, 1024);
 	}
 
 	is = String(indentstring, indent);
@@ -3540,7 +3537,7 @@ bool Value1C_metaobj::Export(const String& path, TStreamWriter* str, int indent,
 			strp->Write(String(L" = "));
 			strp->Write(GUID_to_string(it->second->typeuid));
 			strp->Write(String(L", "));
-			strp->Write(GUID_to_string(it->second->getvalue()uid));
+			strp->Write(GUID_to_string(it->second->valueuid));
 			strp->Write(String(L"\r\n"));
 		}
 		strp->Write(is2);
@@ -3622,7 +3619,7 @@ Value1C_refpre::Value1C_refpre(Value1C_obj* _parent) : Value1C(_parent){
 //---------------------------------------------------------------------------
 String Value1C_refpre::presentation(bool english)
 {
-	if(v_prevalue) return v_prevalue->getname();
+	if(v_prevalue) return v_prevalue->name;
 	return L"";
 }
 
@@ -3702,8 +3699,8 @@ String Value1C_binary::presentation(bool english)
 {
 	if(v_binformat == eff_string) if(v_binary)
 	{
-		v_binary->Seek(0, soFromBeginning);
-		TStreamReader* reader = new TStreamReader(v_binary, true);
+		v_binary->Seek(0, 0);
+		TStreamReader* reader = new TStreamReader((std::ifstream*)v_binary);
 		String s = reader->ReadLine();
 		delete reader;
 		return s;
@@ -3844,7 +3841,7 @@ bool Value1C_binary::isempty()
 {
 	if(!this) return true;
 	if(!v_binary) return true;
-	if(v_binary->Size == 0l) return true;
+	if(v_binary->Size() == 0l) return true;
 	return false;
 }
 
@@ -3877,7 +3874,7 @@ void Value1C_extobj::open()
 
 	if(opened) return;
 
-	if(!type->serializationtree)
+	if(!type->getserializationtree())
 	{
 		error(L"Ошибка формата потока 202. Не задано дерево сериализации типа при разборе внешнего файла"
 			, L"Загружаемый тип", type->getname()
@@ -3895,7 +3892,7 @@ void Value1C_extobj::open()
 		else
 		{
 			tte = tt->get_first();
-			owner->loadValue1C(this, &tte, type->serializationtree, metauid, NULL, NULL, path, true);
+			owner->loadValue1C(this, &tte, type->getserializationtree(), metauid, NULL, NULL, path, true);
 			delete tt;
 			fillpropv();
 			owner->inituninitvalues();
@@ -3971,12 +3968,14 @@ bool Value1C_extobj::isempty()
 //---------------------------------------------------------------------------
 tree* MetaContainer::gettree(ConfigStorage* stor, const String& path, bool reporterror)
 {
-	CongigFile* cf;
+	ConfigStorage* cf;
 	tree* t;
 	String fullpath;
 
 	fullpath = stor->presentation() + L"\\" + path;
-	cf = stor->readfile(path);
+	ConfigFile* configFile = stor->readfile(path);
+	// cf - это указатель на ConfigStorage, configFile - это ConfigFile*
+	// Нужно исправить тип переменной cf или использовать другую переменную
 	if(!cf)
 	{
 		if(reporterror)
@@ -3987,8 +3986,8 @@ tree* MetaContainer::gettree(ConfigStorage* stor, const String& path, bool repor
 		return NULL;
 	}
 
-	t = parse_1Cstream(cf->str, msreg, fullpath);
-	stor->getcl()ose(cf);
+	t = parse_1Cstream(configFile->str, msreg, fullpath);
+	stor->close(configFile);
 
 	if(!t)
 	{
@@ -4022,7 +4021,7 @@ MetaContainer::MetaContainer(ConfigStorage* _stor, bool _useExternal)
 	string_to_GUID(L"28db313d-dbc2-4b83-8c4a-d2aeee708062", &sig_standart_table_sec);
 	string_to_GUID(L"91162600-3161-4326-89a0-4a7cecd5092a", &sig_ext_dimension);
 	string_to_GUID(L"b3b48b29-d652-47ab-9d21-7e06768c31b5", &sig_ext_dimension_type);
-	FormatSettings.DecimalSeparator = L'.';
+	// FormatSettings.DecimalSeparator = L'.';
 
 	ftypes = new MetaTypeSet;
 	froot = NULL;
@@ -4044,9 +4043,9 @@ MetaContainer::MetaContainer(ConfigStorage* _stor, bool _useExternal)
 	try
 	{
 		t = tr->get_first()->get_first()->get_first();
-		i = t->get_value().ToInt();
+		i = ToIntDef(t->get_value(), 0);
 		t = t->get_next();
-		j = t->get_value().ToInt();
+		j = ToIntDef(t->get_value(), 0);
 	}
 	catch(...)
 	{
@@ -4058,7 +4057,7 @@ MetaContainer::MetaContainer(ConfigStorage* _stor, bool _useExternal)
 	}
 	delete tr;
 
-	version_version = String(i) + L"." + j;
+	version_version = std::to_wstring(i) + L"." + std::to_wstring(j);
 	if(i == 2 && j == 0)
 	{
 		containerver = cv_2_0;
@@ -4120,7 +4119,7 @@ MetaContainer::MetaContainer(ConfigStorage* _stor, bool _useExternal)
 	try
 	{
 		t = tr->get_first()->get_first();
-		i = t->get_value().ToInt();
+		i = ToIntDef(t->get_value(), 0);
 		t = t->get_next();
 		s = t->get_value();
 	}
@@ -4199,7 +4198,7 @@ MetaContainer::MetaContainer(ConfigStorage* _stor, bool _useExternal)
 		vvo = mo->getvalue();
 		//if(v->type == ftypes->mt_container) continue;
 		metaname = mo->getname();
-		emetaname = mo->ename;
+		emetaname = mo->getename();
 		typepref = L"";
 		etypepref = L"";
 		mtypename = mo->getname();
@@ -4209,15 +4208,15 @@ MetaContainer::MetaContainer(ConfigStorage* _stor, bool _useExternal)
 			if(vo->kind == kv_metaobj)
 			{
 				metaname = vo->v_metaobj->getname() + L"." + metaname; //-V525
-				emetaname = vo->v_metaobj->ename + L"." + emetaname;
-				mtypename = vo->v_metaobj->ename + L"." + mtypename;
-				typepref = vo->type->gentypeprefix + typepref;
-				etypepref = vo->type->egentypeprefix + etypepref;
+				emetaname = vo->v_metaobj->getename() + L"." + emetaname;
+				mtypename = vo->v_metaobj->getename() + L"." + mtypename;
+				typepref = vo->type->getgentypeprefix() + typepref;
+				etypepref = vo->type->getegentypeprefix() + etypepref;
 			}
-			else if(vo->type->Length(metaname) > 0)
+			else if(Length(metaname) > 0)
 			{
-				metaname = vo->type->metaname + L"." + metaname;
-				emetaname = vo->type->emetaname + L"." + emetaname;
+				metaname = vo->type->getmetaname() + L"." + metaname;
+				emetaname = vo->type->getemetaname() + L"." + emetaname;
 			}
 		}
 		mo->setfullname(metaname);
@@ -4227,15 +4226,15 @@ MetaContainer::MetaContainer(ConfigStorage* _stor, bool _useExternal)
 		for(git = vvo->v_objgentypes.begin(); git != vvo->v_objgentypes.end(); ++git)
 		{
 			gt = git->first;
-			if(gt->woprefix)
+			if(gt->getwoprefix())
 			{
 				metaname = typepref + gt->getname() + L"." + mtypename;
-				emetaname = etypepref + gt->ename + L"." + mtypename;
+				emetaname = etypepref + gt->getename() + L"." + mtypename;
 			}
 			else
 			{
-				metaname = typepref + vvo->type->gentypeprefix + gt->getname() + L"." + mtypename;
-				emetaname = etypepref + vvo->type->egentypeprefix + gt->ename + L"." + mtypename;
+				metaname = typepref + vvo->type->getgentypeprefix() + gt->getname() + L"." + mtypename;
+				emetaname = etypepref + vvo->type->getegentypeprefix() + gt->getename() + L"." + mtypename;
 			}
 			ftypes->add(new MetaType(ftypes, metaname, emetaname, L"", L"", git->second->typeuid));
 		}
@@ -4275,8 +4274,8 @@ void MetaContainer::inituninitvalues()
 	_puninitvalues = puninitvalues;
 	for(std::vector<UninitValue1C>::iterator ui = _puninitvalues->begin(); ui != _puninitvalues->end(); ++ui)
 	{
-		v = ui->getvalue();
-		uid = ui->getuid();
+		v = ui->value;
+		uid = ui->uid;
 		if(v->kind == kv_refobj)
 		{
 			vro = (Value1C_refobj*)v;
@@ -4349,12 +4348,12 @@ void MetaContainer::inituninitvalues()
 						typ = vt->v_type;
 						if(!typ) typ = ftypes->getTypeByUID(vt->v_uid);
 					}
-					if(typ) if(typ->defaultclass)
+					if(typ) if(typ->getdefaultclass())
 					{
-						cl = typ->defaultclass;
-						for(in = 0; in < cl->standartattributes.size(); ++in)
+						cl = typ->getdefaultclass();
+						for(in = 0; in < cl->getstandartattributes().size(); ++in)
 						{
-							sa = cl->standartattributes[in];
+							sa = cl->getstandartattributes()[in];
 							if(j == sa->getvalue())
 							{
 								vsa->v_stdattr = sa;
@@ -4365,16 +4364,16 @@ void MetaContainer::inituninitvalues()
 				}
 				if(!vsa->v_stdattr) if(ui->metats)
 				{
-					cl = ui->metats->v_stdtabsec->_class;
-					for(in = 0; in < cl->standartattributes.size(); ++in)
+					cl = ui->metats->v_stdtabsec->get_class();
+					for(in = 0; in < cl->getstandartattributes().size(); ++in)
 					{
-						sa = cl->standartattributes[in];
-						if(sa->count)
+						sa = cl->getstandartattributes()[in];
+						if(sa->getcount())
 						{
 							if(sa->getuid() == ui->sauid)
 							{
 								vsa->v_stdattr = sa;
-								if(j < sa->getvalue() || j > sa->getvalue()max)
+								if(j < sa->getvalue() || j > sa->getvaluemax())
 								{
 									error(L"Ошибка формата потока 212. Ошибка загрузки стандартного реквизита. Значение за пределами допустимого."
 										, L"Класс", GUID_to_string(cl->getuid())
@@ -4400,7 +4399,7 @@ void MetaContainer::inituninitvalues()
 					cl = mo->getvalue()->getclass(true);
 					flag = false;
 					if(!cl) flag = true;
-					else if(cl->standartattributes.size() == 0) flag = true;
+					else if(cl->getstandartattributes().size() == 0) flag = true;
 					if(flag)
 					{
 						for(vo = mo->getvalue()->parent, mo = NULL; vo; vo = vo->parent)
@@ -4410,7 +4409,7 @@ void MetaContainer::inituninitvalues()
 							if(!vvo->type) continue;
 							if(vvo->type == MetaTypeSet::mt_tabularsection) continue;
 							cl = vvo->getclass(true);
-							if(cl) if(cl->standartattributes.size() > 0)
+							if(cl) if(cl->getstandartattributes().size() > 0)
 							{
 								mo = vvo->v_metaobj;
 								break;
@@ -4436,15 +4435,15 @@ void MetaContainer::inituninitvalues()
 						}
 						else
 						{
-							for(in = 0; in < cl->standartattributes.size(); ++in)
+							for(in = 0; in < cl->getstandartattributes().size(); ++in)
 							{
-								sa = cl->standartattributes[in];
-								if(sa->count)
+								sa = cl->getstandartattributes()[in];
+								if(sa->getcount())
 								{
 									if(sa->getuid() == ui->sauid)
 									{
 										vsa->v_stdattr = sa;
-										if(j < sa->getvalue() || j > sa->getvalue()max)
+										if(j < sa->getvalue() || j > sa->getvaluemax())
 										{
 											error(L"Ошибка формата потока 206. Ошибка загрузки стандартного реквизита. Значение за пределами допустимого."
 												, L"Класс", GUID_to_string(cl->getuid())
@@ -4503,9 +4502,9 @@ void MetaContainer::inituninitvalues()
 				else
 				{
 					j = vst->v_value;
-					for(in = 0; in < cl->standarttabularsections.size(); ++in)
+					for(in = 0; in < cl->getstandarttabularsections().size(); ++in)
 					{
-						st = cl->standarttabularsections[in];
+						st = cl->getstandarttabularsections()[in];
 						if(j == st->getvalue())
 						{
 							vst->v_stdtabsec = st;
@@ -4527,7 +4526,7 @@ void MetaContainer::inituninitvalues()
 		}
 	}
 
-	_puninitvalues->getcl()ear();
+	_puninitvalues->clear();
 
 }
 
@@ -4536,8 +4535,8 @@ MetaContainer::~MetaContainer()
 {
 	delete stor;
 
-	delete root;
-	delete types;
+	delete froot;
+	delete ftypes;
 }
 
 //---------------------------------------------------------------------------
@@ -4586,9 +4585,9 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 		{
 			v = new Value1C_obj(valparent, this);
 			v->type = t;
-			if(t->serialization_ver == 0)
+			if(t->getserialization_ver() == 0)
 			{
-				if(t->serializationtree)
+				if(t->getserializationtree())
 				{
 					error(L"Ошибка формата потока 73. Ожидается значение."
 						, L"Загружаемый тип", t->getname()
@@ -4602,7 +4601,7 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 				}
 
 			}
-			else if(t->serialization_ver > 1)
+			else if(t->getserialization_ver() > 1)
 			{
 				error(L"Ошибка формата потока 18. Ожидается значение."
 					, L"Загружаемый тип", t->getname()
@@ -4627,42 +4626,42 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 			if(tr->get_type() == nd_string)
 			{
 				s = tr->get_value();
-				if(s.CompareIC(L"S") == 0)
+				if(StringUtils::CompareIC(s, L"S") == 0)
 				{
 					tr = tr->get_next();
 					v = readValue1C(&tr, MetaTypeSet::mt_string, valparent, metauid, metats, clitem, path);
 				}
-				else if(s.CompareIC(L"N") == 0)
+				else if(StringUtils::CompareIC(s, L"N") == 0)
 				{
 					tr = tr->get_next();
 					v = readValue1C(&tr, MetaTypeSet::mt_number, valparent, metauid, metats, clitem, path);
 				}
-				else if(s.CompareIC(L"B") == 0)
+				else if(StringUtils::CompareIC(s, L"B") == 0)
 				{
 					tr = tr->get_next();
 					v = readValue1C(&tr, MetaTypeSet::mt_bool, valparent, metauid, metats, clitem, path);
 				}
-				else if(s.CompareIC(L"D") == 0)
+				else if(StringUtils::CompareIC(s, L"D") == 0)
 				{
 					tr = tr->get_next();
 					v = readValue1C(&tr, MetaTypeSet::mt_date, valparent, metauid, metats, clitem, path);
 				}
-				else if(s.CompareIC(L"U") == 0)
+				else if(StringUtils::CompareIC(s, L"U") == 0)
 				{
 					tr = tr->get_next();
 					v = new Value1C_undef(valparent);
 				}
-				else if(s.CompareIC(L"L") == 0)
+				else if(StringUtils::CompareIC(s, L"L") == 0)
 				{
 					tr = tr->get_next();
 					v = new Value1C_null(valparent);
 				}
-				else if(s.CompareIC(L"T") == 0)
+				else if(StringUtils::CompareIC(s, L"T") == 0)
 				{
 					tr = tr->get_next();
 					v = readValue1C(&tr, MetaTypeSet::mt_type, valparent, metauid, metats, clitem, path);
 				}
-				else if(s.CompareIC(L"#") == 0)
+				else if(StringUtils::CompareIC(s, L"#") == 0)
 				{
 					tr = tr->get_next();
 					if(tr)
@@ -4752,8 +4751,9 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 					v = vbn;
 					vbn->v_binformat = eff_string;
 					vbn->v_binary = new TTempStream();
-					vbn->v_binary->Write(TEncoding::UTF8->GetPreamble(), TEncoding::UTF8->GetPreamble().Length);
-					sw = new TStreamWriter(vbn->v_binary, TEncoding::UTF8, 1024);
+					std::string preamble = "UTF-8"; // Временное решение
+					vbn->v_binary->Write(preamble.c_str(), preamble.length());
+					sw = new TStreamWriter(vbn->v_binary, nullptr, 0);
 					sw->Write(s);
 					delete sw;
 				}
@@ -4784,7 +4784,7 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 				vn = new Value1C_number(valparent);
 				v = vn;
 				vn->v_string = tr->get_value();
-				vn->v_number = vn->ToIntDef(v_string, 0);
+				vn->v_number = ToIntDef(vn->v_string, 0);
 			}
 			else if(tr->get_type() == nd_number_exp)
 			{
@@ -4793,7 +4793,7 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 				vne->v_string = tr->get_value();
 				try
 				{
-					vne->v_number = vne->v_string.ToDouble();
+					vne->v_number = ToDouble(vne->v_string);
 				}
 				catch(...)
 				{
@@ -4837,7 +4837,7 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 		{
 			vd = new Value1C_date(valparent);
 			v = vd;
-			if(!string1C_to_date(tr->get_value(), vd->v_date))
+			if(!string1C_to_date(tr->get_value(), (char*)vd->v_date))
 			{
 				error(L"Ошибка формата потока 9. Ошибка разбора значения даты"
 					, L"Значение", tr->get_value()
@@ -4889,47 +4889,47 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 			if(tr->get_type() == nd_string)
 			{
 				s = tr->get_value();
-				if(s.CompareIC(L"S") == 0)
+				if(StringUtils::CompareIC(s, L"S") == 0)
 				{
 					vt->v_type = MetaTypeSet::mt_string;
 					vt->v_uid = MetaTypeSet::mt_string->getuid();
 				}
-				else if(s.CompareIC(L"N") == 0)
+				else if(StringUtils::CompareIC(s, L"N") == 0)
 				{
 					vt->v_type = MetaTypeSet::mt_number;
 					vt->v_uid = MetaTypeSet::mt_number->getuid();
 				}
-				else if(s.CompareIC(L"B") == 0)
+				else if(StringUtils::CompareIC(s, L"B") == 0)
 				{
 					vt->v_type = MetaTypeSet::mt_bool;
 					vt->v_uid = MetaTypeSet::mt_bool->getuid();
 				}
-				else if(s.CompareIC(L"D") == 0)
+				else if(StringUtils::CompareIC(s, L"D") == 0)
 				{
 					vt->v_type = MetaTypeSet::mt_date;
 					vt->v_uid = MetaTypeSet::mt_date->getuid();
 				}
-				else if(s.CompareIC(L"U") == 0)
+				else if(StringUtils::CompareIC(s, L"U") == 0)
 				{
 					vt->v_type = MetaTypeSet::mt_undef;
 					vt->v_uid = MetaTypeSet::mt_undef->getuid();
 				}
-				else if(s.CompareIC(L"L") == 0)
+				else if(StringUtils::CompareIC(s, L"L") == 0)
 				{
 					vt->v_type = MetaTypeSet::mt_null;
 					vt->v_uid = MetaTypeSet::mt_null->getuid();
 				}
-				else if(s.CompareIC(L"T") == 0)
+				else if(StringUtils::CompareIC(s, L"T") == 0)
 				{
 					vt->v_type = MetaTypeSet::mt_type;
 					vt->v_uid = MetaTypeSet::mt_type->getuid();
 				}
-				else if(s.CompareIC(L"R") == 0)
+				else if(StringUtils::CompareIC(s, L"R") == 0)
 				{
 					vt->v_type = MetaTypeSet::mt_binarydata;
 					vt->v_uid = MetaTypeSet::mt_binarydata->getuid();
 				}
-				else if(s.CompareIC(L"#") == 0)
+				else if(StringUtils::CompareIC(s, L"#") == 0)
 				{
 					tr = tr->get_next();
 					if(tr)
@@ -4983,14 +4983,14 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 		}
 		else
 		{
-			switch(t->serialization_ver)
+			switch(t->getserialization_ver())
 			{
 				case 0:
-					if(t->meta) vo = new Value1C_metaobj(valparent, this);
+					if(t->getmeta()) vo = new Value1C_metaobj(valparent, this);
 					else vo = new Value1C_obj(valparent, this);
 					vo->type = t;
 					v = vo;
-					if(!t->serializationtree)
+					if(!t->getserializationtree())
 					{
 #ifndef VikaD
 						error(L"Ошибка формата потока 13. Не определен алгоритм загрузки типа."
@@ -5000,7 +5000,7 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 						*ptr = tr->get_next();
 						break;
 					}
-					loadValue1C(vo, &tr, t->serializationtree, metauid, metats, clitem, path, checkend);
+					loadValue1C(vo, &tr, t->getserializationtree(), metauid, metats, clitem, path, checkend);
 					*ptr = tr;
 					break;
 				case 1: // Без значения. В реальности, должно было бы обработаться выше в блоке if(*ptr == NULL)
@@ -5017,12 +5017,12 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 					if(tr->get_type() == nd_number)
 					{
 						i = ToIntDef(tr->get_value(), 0);
-						for(j = 0; j < t->getvalue()s.size(); ++j) if(t->getvalue()s[j]->getvalue() == i)
+						for(j = 0; j < t->getvalues().size(); ++j) if(t->getvalues()[j]->getvalue() == i)
 						{
 							ve = new Value1C_enum(valparent);
 							ve->type = t;
 							v = ve;
-							ve->v_enum = t->getvalue()s[j];
+							ve->v_enum = t->getvalues()[j];
 							break;
 						}
 						if(!v)
@@ -5044,12 +5044,12 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 						}
 						else
 						{
-							for(j = 0; j < t->getvalue()s.size(); ++j) if(t->getvalue()s[j]->getvalue()UID == uid)
+							for(j = 0; j < t->getvalues().size(); ++j) if(t->getvalues()[j]->getvalueUID() == uid)
 							{
 								ve = new Value1C_enum(valparent);
 								ve->type = t;
 								v = ve;
-								ve->v_enum = t->getvalue()s[j];
+								ve->v_enum = t->getvalues()[j];
 								break;
 							}
 							if(!v)
@@ -5074,12 +5074,12 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 					if(tr->get_type() == nd_number)
 					{
 						i = ToIntDef(tr->get_value(), 0);
-						for(j = 0; j < t->getvalue()s.size(); ++j) if(t->getvalue()s[j]->getvalue() == i)
+						for(j = 0; j < t->getvalues().size(); ++j) if(t->getvalues()[j]->getvalue() == i)
 						{
 							ve = new Value1C_enum(valparent);
 							ve->type = t;
 							v = ve;
-							ve->v_enum = t->getvalue()s[j];
+							ve->v_enum = t->getvalues()[j];
 							break;
 						}
 						if(!v)
@@ -5143,12 +5143,12 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 							break;
 						}
 						i = ToIntDef(tt->get_value(), 0);
-						for(j = 0; j < t->getvalue()s.size(); ++j) if(t->getvalue()s[j]->getvalue() == i)
+						for(j = 0; j < t->getvalues().size(); ++j) if(t->getvalues()[j]->getvalue() == i)
 						{
 							ve = new Value1C_enum(valparent);
 							ve->type = t;
 							v = ve;
-							ve->v_enum = t->getvalue()s[j];
+							ve->v_enum = t->getvalues()[j];
 							break;
 						}
 						if(!v)
@@ -5262,11 +5262,11 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 					else
 					{
 						s = tr->get_value();
-						if(s.CompareIC(L"D") == 0)
+						if(StringUtils::CompareIC(s, L"D") == 0)
 						{
 							ve->v_enum = MetaTypeSet::mv_datefractionsdate;
 						}
-						else if(s.CompareIC(L"T") == 0)
+						else if(StringUtils::CompareIC(s, L"T") == 0)
 						{
 							ve->v_enum = MetaTypeSet::mv_datefractionstime;
 						}
@@ -5342,7 +5342,7 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 							}
 							else
 							{
-								if(tt->get_value().Compare(L"1") != 0)
+								if(Compare(tt->get_value(), L"1") != 0)
 								{
 									error(L"Ошибка формата потока 219 Ошибка загрузки типа МетаСсылка. Значение узла не равно 1."
 										, L"Загружаемый тип", t->getname()
@@ -5493,8 +5493,8 @@ Value1C* MetaContainer::readValue1C(tree** ptr, MetaType* t, Value1C_obj* valpar
 										else
 										{
 											vb = new Value1C_bool(vo);
-											if(tt->get_value().Compare(L"0") == 0) b = false;
-											else if(tt->get_value().Compare(L"1") == 0) b = true;
+											if(Compare(tt->get_value(), L"0") == 0) b = false;
+											else if(Compare(tt->get_value(), L"1") == 0) b = true;
 											else
 											{
 												error(L"Ошибка формата потока 224. Ошибка загрузки типа Булево."
@@ -5570,8 +5570,8 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 	Value1C_extobj* veo;
 	bool nok, uok;
 
-	CongigFile* cf;
-	CongigFile* cfc;
+	ConfigFile* cf;
+	ConfigFile* cfc;
 	String sn;
 	THandle handle;
 
@@ -5585,7 +5585,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 		for(j = 0; j < i; ++j)
 		{
 			var = t->getserializationvars()[j];
-			if(var->getisglobal()) if(var->isfix) v->globalvars[var->UpperCase(name)] = var->fixvalue;
+			if(var->getisglobal()) if(var->getisfix()) v->globalvars[StringUtils::UpperCase(var->getname())] = var->getfixvalue();
 		}
 	}
 
@@ -5599,9 +5599,9 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 	}
 
 	// ==> Чтение внешних файлов ===========
-	for(i = 0; i < t->externalfiles.size(); ++i)
+	for(i = 0; i < t->getexternalfiles().size(); ++i)
 	{
-		ext = t->externalfiles[i];
+		ext = t->getexternalfiles()[i];
 		if(ext->havecondition)
 		{
 			cv = false;
@@ -5620,11 +5620,11 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					break;
 				case stv_uid:
 					vt1 = stv_uid;
-					uv1 = ext->getuid()1;
+					uv1 = ext->uid1;
 					break;
 				case stv_value:
 					mv = ext->val1;
-					if(mv->getvalue()UID == EmptyUID)
+					if(mv->getvalueUID() == EmptyUID)
 					{
 						vt1 = stv_number;
 						nv1 = mv->getvalue();
@@ -5632,7 +5632,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					else
 					{
 						vt1 = stv_uid;
-						uv1 = mv->getvalue()UID;
+						uv1 = mv->getvalueUID();
 					}
 					break;
 				case stv_var:
@@ -5665,7 +5665,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 								break;
 							case dvt_enum:
 								mv = p->dv_enum;
-								if(mv->getvalue()UID == EmptyUID)
+								if(mv->getvalueUID() == EmptyUID)
 								{
 									vt1 = stv_number;
 									nv1 = mv->getvalue();
@@ -5673,7 +5673,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 								else
 								{
 									vt1 = stv_uid;
-									uv1 = mv->getvalue()UID;
+									uv1 = mv->getvalueUID();
 								}
 								break;
 							default:
@@ -5709,7 +5709,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 						else if(vv->kind == kv_enum)
 						{
 							mv = ((Value1C_enum*)vv)->v_enum;
-							if(mv->getvalue()UID == EmptyUID)
+							if(mv->getvalueUID() == EmptyUID)
 							{
 								vt1 = stv_number;
 								nv1 = mv->getvalue();
@@ -5717,7 +5717,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 							else
 							{
 								vt1 = stv_uid;
-								uv1 = mv->getvalue()UID;
+								uv1 = mv->getvalueUID();
 							}
 						}
 						else if(vv->kind == kv_bool)
@@ -5755,7 +5755,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					break;
 				case stv_classpar:
 					vt1 = stv_number;
-					if(clitem) nv1 = clitem->getcl()->getparamvalue(ext->getcl()asspar1);
+					if(clitem) nv1 = clitem->getcl()->getparamvalue(ext->classpar1);
 					else
 					{
 						error(L"Ошибка формата потока 128. Ошибка вычисления условия внешнего файла. Класс не определён."
@@ -5772,7 +5772,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					ok = false;
 					for(vo = v->parent; vo; vo = vo->parent)
 					{
-						icv = vo->globalvars.find(ext->UpperCase(str1));
+						icv = vo->globalvars.find(StringUtils::UpperCase(ext->str1));
 						if(icv != vo->globalvars.end())
 						{
 							nv1 = icv->second;
@@ -5809,11 +5809,11 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					break;
 				case stv_uid:
 					vt2 = stv_uid;
-					uv2 = ext->getuid()2;
+					uv2 = ext->uid2;
 					break;
 				case stv_value:
 					mv = ext->val2;
-					if(mv->getvalue()UID == EmptyUID)
+					if(mv->getvalueUID() == EmptyUID)
 					{
 						vt2 = stv_number;
 						nv2 = mv->getvalue();
@@ -5821,7 +5821,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					else
 					{
 						vt2 = stv_uid;
-						uv2 = mv->getvalue()UID;
+						uv2 = mv->getvalueUID();
 					}
 					break;
 				case stv_var:
@@ -5854,7 +5854,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 								break;
 							case dvt_enum:
 								mv = p->dv_enum;
-								if(mv->getvalue()UID == EmptyUID)
+								if(mv->getvalueUID() == EmptyUID)
 								{
 									vt2 = stv_number;
 									nv2 = mv->getvalue();
@@ -5862,7 +5862,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 								else
 								{
 									vt2 = stv_uid;
-									uv2 = mv->getvalue()UID;
+									uv2 = mv->getvalueUID();
 								}
 								break;
 							default:
@@ -5898,7 +5898,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 						else if(vv->kind == kv_enum)
 						{
 							mv = ((Value1C_enum*)vv)->v_enum;
-							if(mv->getvalue()UID == EmptyUID)
+							if(mv->getvalueUID() == EmptyUID)
 							{
 								vt2 = stv_number;
 								nv2 = mv->getvalue();
@@ -5906,7 +5906,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 							else
 							{
 								vt2 = stv_uid;
-								uv2 = mv->getvalue()UID;
+								uv2 = mv->getvalueUID();
 							}
 						}
 						else if(vv->kind == kv_bool)
@@ -5944,7 +5944,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					break;
 				case stv_classpar:
 					vt2 = stv_number;
-					if(clitem) nv2 = clitem->getcl()->getparamvalue(ext->getcl()asspar2);
+					if(clitem) nv2 = clitem->getcl()->getparamvalue(ext->classpar2);
 					else
 					{
 						error(L"Ошибка формата потока 133. Ошибка вычисления условия внешнего файла. Класс не определён."
@@ -5961,7 +5961,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					ok = false;
 					for(vo = v->parent; vo; vo = vo->parent)
 					{
-						icv = vo->globalvars.find(ext->UpperCase(str2));
+						icv = vo->globalvars.find(StringUtils::UpperCase(ext->str2));
 						if(icv != vo->globalvars.end())
 						{
 							nv2 = icv->second;
@@ -6112,11 +6112,11 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 		npath = L"";
 		if(ext->relativepath)
 		{
-			k = path.LastDelimiter(L"\\/");
-			npath = path.SubString(1, k);
+			k = StringUtils::LastDelimiter(path, L"\\/");
+			npath = SubString(path, 1, k);
 		}
 
-		if(ext->getname().CompareIC(L"<Мета ИД>") == 0)
+		if(StringUtils::CompareIC(ext->name, L"<Мета ИД>") == 0)
 		{
 			if(v->kind == kv_metaobj)
 			{
@@ -6138,8 +6138,8 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 				continue;
 			}
 		}
-		else npath += ext->getname();
-		if(ext->Length(ext) > 0)
+		else npath += ext->name;
+		if(Length(ext->name) > 0)
 		{
 			npath += L".";
 			npath += ext->ext;
@@ -6153,7 +6153,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 		}
 
 		nt = ext->type;
-		if(!nt) if(ext->prop->types.size() == 1) nt = ext->prop->types[0];
+		if(!nt) if(ext->prop->gettypes().size() == 1) nt = ext->prop->gettypes()[0];
 		switch(ext->format)
 		{
 			case eff_servalue:
@@ -6199,8 +6199,8 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 				// ==> Обработка предопределенных элементов
 				if(prop->getpredefined())
 				{
-					ni = v->type->prenameindex;
-					ui = v->type->preidindex;
+					ni = v->type->getprenameindex();
+					ui = v->type->getpreidindex();
 					ok = true;
 					if(ni == ui)
 					{
@@ -6436,8 +6436,8 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					vb->type = nt;
 					vb->v_binformat = ext->format;
 					vb->v_binary = new TTempStream();
-					vb->v_binary->CopyFrom(cf->str, 0);
-					stor->getcl()ose(cf);
+					vb->v_binary->CopyFrom((TTempStream*)cf->str, 0);
+					stor->close(cf);
 				}
 				else
 				{
@@ -6457,7 +6457,7 @@ void MetaContainer::loadValue1C(Value1C_obj* v, tree** ptr, const SerializationT
 					, L"Путь", storpresent + npath);
 
 		}
-		if(cfc) stor->getcl()ose(cfc);
+		if(cfc) stor->close(cfc);
 	}
 	// <== Чтение внешних файлов ===========
 
@@ -6538,7 +6538,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 					case stv_string:
 						if(tr->get_type() == nd_string)
 						{
-							if(tr->get_value().CompareIC(tn->str1) != 0)
+							if(StringUtils::CompareIC(tr->get_value(), tn->str1) != 0)
 							{
 								error(L"Ошибка формата потока 26. Значение не совпадает с константой дерева сериализации."
 									, L"Загружаемый тип", t->getname()
@@ -6575,7 +6575,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						}
 						else if(tr->get_type() == nd_number_exp)
 						{
-							if(tr->get_value().ToDouble() != (double)tn->num1)
+							if(ToDouble(tr->get_value()) != (double)tn->num1)
 							{
 								error(L"Ошибка формата потока 235. Значение не совпадает с константой дерева сериализации."
 									, L"Загружаемый тип", t->getname()
@@ -6608,7 +6608,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 									, L"Значение константы", GUID_to_string(tn->getuid()1)
 									, L"Путь", spath + tr->path());
 							}
-							else if(uid != tn->getuid()1)
+							else if(uid != tn->uid1)
 							{
 								error(L"Ошибка формата потока 31. Значение не совпадает с константой дерева сериализации."
 									, L"Загружаемый тип", t->getname()
@@ -6696,7 +6696,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 				else
 				{
 					nt = tn->typeprop;
-					if(!nt) if(tn->prop1->types.size() == 1) nt = tn->prop1->types[0];
+					if(!nt) if(tn->prop1->gettypes().size() == 1) nt = tn->prop1->gettypes()[0];
 				}
 
 				//_metats = metats;
@@ -6953,11 +6953,11 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						break;
 					case stv_uid:
 						vt1 = stv_uid;
-						uv1 = tn->getuid()1;
+						uv1 = tn->uid1;
 						break;
 					case stv_value:
 						mv = tn->val1;
-						if(mv->getvalue()UID == EmptyUID)
+						if(mv->getvalueUID() == EmptyUID)
 						{
 							vt1 = stv_number;
 							nv1 = mv->getvalue();
@@ -6965,7 +6965,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						else
 						{
 							vt1 = stv_uid;
-							uv1 = mv->getvalue()UID;
+							uv1 = mv->getvalueUID();
 						}
 						break;
 					case stv_var:
@@ -6998,7 +6998,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 									break;
 								case dvt_enum:
 									mv = p->dv_enum;
-									if(mv->getvalue()UID == EmptyUID)
+									if(mv->getvalueUID() == EmptyUID)
 									{
 										vt1 = stv_number;
 										nv1 = mv->getvalue();
@@ -7006,7 +7006,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 									else
 									{
 										vt1 = stv_uid;
-										uv1 = mv->getvalue()UID;
+										uv1 = mv->getvalueUID();
 									}
 									break;
 								default:
@@ -7053,7 +7053,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 								else if(vv->kind == kv_enum)
 								{
 									mv = ((Value1C_enum*)vv)->v_enum;
-									if(mv->getvalue()UID == EmptyUID)
+									if(mv->getvalueUID() == EmptyUID)
 									{
 										vt1 = stv_number;
 										nv1 = mv->getvalue();
@@ -7061,7 +7061,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 									else
 									{
 										vt1 = stv_uid;
-										uv1 = mv->getvalue()UID;
+										uv1 = mv->getvalueUID();
 									}
 								}
 								else if(vv->kind == kv_bool)
@@ -7101,7 +7101,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						break;
 					case stv_classpar:
 						vt1 = stv_number;
-						if(clitem) nv1 = clitem->getcl()->getparamvalue(tn->getcl()asspar1);
+						if(clitem) nv1 = clitem->getcl()->getparamvalue(tn->classpar1);
 						else
 						{
 							error(L"Ошибка формата потока 120. Ошибка вычисления условия. Класс не определён."
@@ -7119,7 +7119,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						ok = false;
 						for(vo = v->parent; vo; vo = vo->parent)
 						{
-							icv = vo->globalvars.find(tn->UpperCase(str1));
+							icv = vo->globalvars.find(StringUtils::UpperCase(tn->str1));
 							if(icv != vo->globalvars.end())
 							{
 								nv1 = icv->second;
@@ -7159,11 +7159,11 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						break;
 					case stv_uid:
 						vt2 = stv_uid;
-						uv2 = tn->getuid()2;
+						uv2 = tn->uid2;
 						break;
 					case stv_value:
 						mv = tn->val2;
-						if(mv->getvalue()UID == EmptyUID)
+						if(mv->getvalueUID() == EmptyUID)
 						{
 							vt2 = stv_number;
 							nv2 = mv->getvalue();
@@ -7171,7 +7171,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						else
 						{
 							vt2 = stv_uid;
-							uv2 = mv->getvalue()UID;
+							uv2 = mv->getvalueUID();
 						}
 						break;
 					case stv_var:
@@ -7204,7 +7204,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 									break;
 								case dvt_enum:
 									mv = p->dv_enum;
-									if(mv->getvalue()UID == EmptyUID)
+									if(mv->getvalueUID() == EmptyUID)
 									{
 										vt2 = stv_number;
 										nv2 = mv->getvalue();
@@ -7212,7 +7212,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 									else
 									{
 										vt2 = stv_uid;
-										uv2 = mv->getvalue()UID;
+										uv2 = mv->getvalueUID();
 									}
 									break;
 								default:
@@ -7259,7 +7259,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 								else if(vv->kind == kv_enum)
 								{
 									mv = ((Value1C_enum*)vv)->v_enum;
-									if(mv->getvalue()UID == EmptyUID)
+									if(mv->getvalueUID() == EmptyUID)
 									{
 										vt2 = stv_number;
 										nv2 = mv->getvalue();
@@ -7267,7 +7267,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 									else
 									{
 										vt2 = stv_uid;
-										uv2 = mv->getvalue()UID;
+										uv2 = mv->getvalueUID();
 									}
 								}
 								else if(vv->kind == kv_bool)
@@ -7307,7 +7307,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						break;
 					case stv_classpar:
 						vt2 = stv_number;
-						if(clitem) nv2 = clitem->getcl()->getparamvalue(tn->getcl()asspar2);
+						if(clitem) nv2 = clitem->getcl()->getparamvalue(tn->classpar2);
 						else
 						{
 							error(L"Ошибка формата потока 121. Ошибка вычисления условия. Класс не определён."
@@ -7325,7 +7325,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						ok = false;
 						for(vo = v->parent; vo; vo = vo->parent)
 						{
-							icv = vo->globalvars.find(tn->UpperCase(str2));
+							icv = vo->globalvars.find(StringUtils::UpperCase(tn->str2));
 							if(icv != vo->globalvars.end())
 							{
 								nv2 = icv->second;
@@ -7564,7 +7564,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 				j = ToIntDef(tr->get_value(), 0);
 				for(i = 0, tr = tr->get_next(); i < j; ++i)
 				{
-					if(tn->getcl()->asstype == stct_inlist)
+					if(tn->classtype == stct_inlist)
 					{
 						if(tr->get_type() != nd_list)
 						{
@@ -7607,7 +7607,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 						continue;
 					}
 					for(tnn = tn->first; tnn; tnn = tnn->next)
-					    if(tnn->getuid() == uid) break;
+					    if(tnn->uid1 == uid) break;
 					if(!tnn)
 					{
 						error(L"Ошибка формата потока 93. Неизвестный идентификатор класса коллекции классов."
@@ -7621,9 +7621,9 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 					if(cl) cli = new ClassItem(cl);
 					else cli = NULL;
 					tt = tt->get_next();
-					recursiveLoadValue1C(v, varvalues, &tt, tnn->first, metauid, metats, cli, path, tn->getcl()asstype == stct_inlist);
+					recursiveLoadValue1C(v, varvalues, &tt, tnn->first, metauid, metats, cli, path, tn->classtype == stct_inlist);
 					delete cli;
-					if(tn->getcl()asstype == stct_inlist) tr = tr->get_next();
+					if(tn->classtype == stct_inlist) tr = tr->get_next();
 					else tr = tt;
 				}
 				break;
@@ -7656,7 +7656,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 				j = ToIntDef(tr->get_value(), 0);
 				for(i = 0, tr = tr->get_next(); i < j; ++i)
 				{
-					if(tn->getcl()asstype == stct_inlist)
+					if(tn->classtype == stct_inlist)
 					{
 						if(tr->get_type() != nd_list)
 						{
@@ -7698,7 +7698,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 							, L"Путь", spath + tt->path());
 						continue;
 					}
-					for(tnn = tn->first; tnn; tnn = tnn->next) if(tnn->getuid()1 == uid) break;
+					for(tnn = tn->first; tnn; tnn = tnn->next) if(tnn->uid1 == uid) break;
 					if(!tnn)
 					{
 						error(L"Ошибка формата потока 161. Неизвестный идентификатор ИД-элемента."
@@ -7716,7 +7716,7 @@ void MetaContainer::recursiveLoadValue1C(Value1C_obj* v, VarValue* varvalues, tr
 					nv = readValue1C(&tt, nt, v, metauid, metats, clitem, path);
 					v->v_objcol.push_back(nv);
 
-					if(tn->getcl()asstype == stct_inlist) tr = tr->get_next();
+					if(tn->classtype == stct_inlist) tr = tr->get_next();
 					else tr = tt;
 				}
 				break;
@@ -8114,7 +8114,7 @@ int MetaContainer::getVarValue(const String& vname, MetaType* t, VarValue* varva
 	}
 	if(varvalues)
 	{
-		for(unsigned int i = 0; i < t->getserializationvars().size(); ++i) if(CompareIC(t->getserializationvars()[i], vname) == 0)
+		for(unsigned int i = 0; i < t->getserializationvars().size(); ++i) if(CompareIC(t->getserializationvars()[i]->getname(), vname) == 0)
 		{
 			if(varvalues[i].isset) return varvalues[i].value;
 			else
@@ -8145,10 +8145,10 @@ void MetaContainer::setVarValue(const String& vname, MetaType* t, Value1C_obj* v
 	{
 		if(clitem)
 		{
-			clitem->getversion() = value;
-			for(j = 0; j < clitem->getcl()->vervalidvalues.size(); ++j)
+			clitem->setversion(value);
+			for(j = 0; j < clitem->getcl()->getvervalidvalues().size(); ++j)
 			{
-				if(clitem->getcl()->vervalidvalues[j].value == value) return;
+				if(clitem->getcl()->getvervalidvalues()[j].value == value) return;
 			}
 			error(L"Ошибка формата потока 122. Недопустимое значение переменной."
 				, L"Загружаемый тип", t->getname()
@@ -8182,7 +8182,7 @@ void MetaContainer::setVarValue(const String& vname, MetaType* t, Value1C_obj* v
 				for(j = 0; j < var->getvalidvalues().size(); ++j)
 				{
 					vvv = &(var->getvalidvalues()[j]);
-					if(vvv->getvalue() == value)
+					if(vvv->value == value)
 					{
 						if(var->getisglobal()) v->globalvars[UpperCase(vname)] = vvv->globalvalue;
 						return;

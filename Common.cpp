@@ -1,4 +1,5 @@
 #include "Common.h"
+#include "vcl.h"
 #include <sstream>
 #include <iomanip>
 #include <unistd.h>  // for usleep
@@ -104,5 +105,6 @@ long InterlockedDecrement(long volatile* target) {
 
 // Определение глобальных переменных
 TGUID EmptyUID = {{0,0,0,0}};
+String TEncoding::UTF8 = L"UTF-8";
 
 //---------------------------------------------------------------------------

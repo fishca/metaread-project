@@ -168,7 +168,7 @@ void tree::outtext(String& text)
 
 	if(num_subnode)
 	{
-		if(text.Length()) text += L"\r\n";
+		if(text.length()) text += L"\r\n";
 		text += L'{';
 		tree* t = first;
 		while(t)
@@ -217,7 +217,7 @@ String tree::path()
 	if(!this) return L":??"; //-V704
 	for(t = this; t->parent; t = t->parent)
 	{
-		p = String(L":") + t->index + p;
+		p = String(L":") + std::to_wstring(t->index) + p;
 	}
 	return p;
 }
@@ -225,7 +225,7 @@ String tree::path()
 //---------------------------------------------------------------------------
 node_type classification_value(const String& value)
 {
-	if(value.Length() == 0) return nd_empty;
+	if(value.length() == 0) return nd_empty;
 	if(regex_match(value.c_str(), exp_number)) return nd_number;
 	if(regex_match(value.c_str(), exp_number_exp)) return nd_number_exp;
 	if(regex_match(value.c_str(), exp_guid)) return nd_guid;
@@ -294,8 +294,8 @@ tree* parse_1Cstream(TStream* str, MessageRegistrator* err, const String& path)
 						if(!t)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							delete ret;
 							return NULL;
 						}
@@ -328,8 +328,8 @@ tree* parse_1Cstream(TStream* str, MessageRegistrator* err, const String& path)
 						if(!t)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							delete ret;
 							return NULL;
 						}
@@ -337,9 +337,9 @@ tree* parse_1Cstream(TStream* str, MessageRegistrator* err, const String& path)
 						break;
 					default:
 						if(err) err->AddError(L"Ошибка формата потока. Ошибочный символ в режиме ожидания разделителя.",
-							L"Символ", sym,
-							L"Код символа", tohex(sym),
-							L"Путь", path);
+						        L"Символ", std::to_wstring(sym),
+						        L"Код символа", tohex(sym),
+						        L"Путь", path);
 						delete ret;
 						return NULL;
 				}
@@ -378,8 +378,8 @@ tree* parse_1Cstream(TStream* str, MessageRegistrator* err, const String& path)
 							if(!t)
 							{
 								if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-									L"Позиция", i,
-									L"Путь", path);
+								        L"Позиция", std::to_wstring(i),
+								        L"Путь", path);
 								delete ret;
 								return NULL;
 							}
@@ -387,9 +387,9 @@ tree* parse_1Cstream(TStream* str, MessageRegistrator* err, const String& path)
 							break;
 						default:
 							if(err) err->AddError(L"Ошибка формата потока. Ошибочный символ в режиме ожидания разделителя.",
-								L"Символ", sym,
-								L"Код символа", tohex(sym),
-								L"Путь", path);
+							        L"Символ", std::to_wstring(sym),
+							        L"Код символа", tohex(sym),
+							        L"Путь", path);
 							delete ret;
 							return NULL;
 					}
@@ -418,8 +418,8 @@ tree* parse_1Cstream(TStream* str, MessageRegistrator* err, const String& path)
 						if(!t)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							delete ret;
 							return NULL;
 						}
@@ -489,7 +489,7 @@ tree* parse_1Ctext(const String& text, MessageRegistrator* err, const String& pa
 	String curvalue;
 	tree* ret;
 	tree* t;
-	int len = text.Length();
+	int len = text.length();
 	int i;
 	wchar_t sym;
 	node_type nt;
@@ -528,8 +528,8 @@ tree* parse_1Ctext(const String& text, MessageRegistrator* err, const String& pa
 						if(!t)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							delete ret;
 							return NULL;
 						}
@@ -562,8 +562,8 @@ tree* parse_1Ctext(const String& text, MessageRegistrator* err, const String& pa
 						if(!t)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							delete ret;
 							return NULL;
 						}
@@ -571,9 +571,9 @@ tree* parse_1Ctext(const String& text, MessageRegistrator* err, const String& pa
 						break;
 					default:
 						if(err) err->AddError(L"Ошибка формата потока. Ошибочный символ в режиме ожидания разделителя.",
-							L"Символ", sym,
-							L"Код символа", tohex(sym),
-							L"Путь", path);
+						        L"Символ", std::to_wstring(sym),
+						        L"Код символа", tohex(sym),
+						        L"Путь", path);
 						delete ret;
 						return NULL;
 				}
@@ -612,8 +612,8 @@ tree* parse_1Ctext(const String& text, MessageRegistrator* err, const String& pa
 							if(!t)
 							{
 								if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-									L"Позиция", i,
-									L"Путь", path);
+								        L"Позиция", std::to_wstring(i),
+								        L"Путь", path);
 								delete ret;
 								return NULL;
 							}
@@ -621,9 +621,9 @@ tree* parse_1Ctext(const String& text, MessageRegistrator* err, const String& pa
 							break;
 						default:
 							if(err) err->AddError(L"Ошибка формата потока. Ошибочный символ в режиме ожидания разделителя.",
-								L"Символ", sym,
-								L"Код символа", tohex(sym),
-								L"Путь", path);
+							        L"Символ", std::to_wstring(sym),
+							        L"Код символа", tohex(sym),
+							        L"Путь", path);
 							delete ret;
 							return NULL;
 					}
@@ -652,8 +652,8 @@ tree* parse_1Ctext(const String& text, MessageRegistrator* err, const String& pa
 						if(!t)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							delete ret;
 							return NULL;
 						}
@@ -763,8 +763,8 @@ bool test_parse_1Ctext(TStream* str, MessageRegistrator* err, const String& path
 						if(level <= 0)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							ret = false;
 						}
 						state = s_delimitier;
@@ -793,17 +793,17 @@ bool test_parse_1Ctext(TStream* str, MessageRegistrator* err, const String& path
 						if(level <= 0)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							ret = false;
 						}
 						level--;
 						break;
 					default:
 						if(err) err->AddError(L"Ошибка формата потока. Ошибочный символ в режиме ожидания разделителя.",
-							L"Символ", sym,
-							L"Код символа", tohex(sym),
-							L"Путь", path);
+						        L"Символ", std::to_wstring(sym),
+						        L"Код символа", tohex(sym),
+						        L"Путь", path);
 						//err->Status(L"");
 						delete reader;
 						return ret;
@@ -840,8 +840,8 @@ bool test_parse_1Ctext(TStream* str, MessageRegistrator* err, const String& path
 							if(level <= 0)
 							{
 								if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-									L"Позиция", i,
-									L"Путь", path);
+								        L"Позиция", std::to_wstring(i),
+								        L"Путь", path);
 								ret = false;
 							}
 							level--;
@@ -849,9 +849,9 @@ bool test_parse_1Ctext(TStream* str, MessageRegistrator* err, const String& path
 							break;
 						default:
 							if(err) err->AddError(L"Ошибка формата потока. Ошибочный символ в режиме ожидания разделителя.",
-								L"Символ", sym,
-								L"Код символа", tohex(sym),
-								L"Путь", path);
+							        L"Символ", std::to_wstring(sym),
+							        L"Код символа", tohex(sym),
+							        L"Путь", path);
 							//err->Status(L"");
 							delete reader;
 							return ret;
@@ -886,8 +886,8 @@ bool test_parse_1Ctext(TStream* str, MessageRegistrator* err, const String& path
 						if(level <= 0)
 						{
 							if(err) err->AddError(L"Ошибка формата потока. Лишняя закрывающая скобка }.",
-								L"Позиция", i,
-								L"Путь", path);
+							        L"Позиция", std::to_wstring(i),
+							        L"Путь", path);
 							ret = false;
 						}
 						level--;

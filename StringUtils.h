@@ -10,4 +10,5 @@ namespace StringUtils {
     size_t Pos(const std::wstring& s, const std::wstring& substr);
     bool IsEmpty(const std::wstring& s);
     std::wstring UpperCase(const std::wstring& s);
+    size_t LastDelimiter(const std::wstring& delimiters, const std::wstring& s);
 }
